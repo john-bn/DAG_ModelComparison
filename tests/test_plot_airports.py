@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 
 from comparator.plotting import plot_airports
-from comparator.utils import major_airports_df
+from comparator.util import major_airports_df
 
 def test_airports_within_extent():
     """All major airports should fall within a standard CONUS map extent."""
