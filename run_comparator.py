@@ -1,10 +1,10 @@
 # run_comparison.py
-from herbie import Herbie
+from herbie.core import Herbie
 import xesmf as xe
 import matplotlib.pyplot as plt
-import tempdiff as td
-import plotting as plot
-import util
+from comparator import tempdiff as td
+from comparator import plotting as plot
+from comparator import util
 from datetime import datetime, timedelta
 
 def main():
@@ -47,12 +47,12 @@ def main():
     src_grid = {"lon": ds_rtma["longitude"], "lat": ds_rtma["latitude"]}
     tgt_grid = {"lon": ds_hrrr["longitude"], "lat": ds_hrrr["latitude"]}
 
-    # Fast sanity first (nearest), then higher-quality bilinear — no filenames
+    # Fast sanity first (nearest) & wrap in xarray
     regridder_fast = xe.Regridder(src_grid, tgt_grid, method="nearest_s2d", periodic=True, reuse_weights=False)
     rtma_on_hrrr_fast = regridder_fast(ds_rtma["t2m"])
 
     # 3️⃣ Compute Fahrenheit temperature difference
-    diffF = td.compute_tempdiff_f(ds_hrrr["t2m"], rtma_on_hrrr["t2m"])
+    diffF = td.compute_tempdiff_f(ds_hrrr["t2m"], rtma_on_hrrr_fast)
 
     # 4️⃣ Plot the map + airports
     fig, ax = plot.plot_tempdiff_map(ds_hrrr["longitude"], ds_hrrr["latitude"], diffF)

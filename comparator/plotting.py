@@ -6,12 +6,10 @@ import cartopy.feature as cfeature
 import xarray as xr
 import pandas as pd
 
-def plot_tempdiff_map(lon: xr.DataArray, lat: xr.DataArray, tempdiff_f: xr.DataArray,
-                      title: str = "HRRR − RTMA: 2 m Temperature Difference (°F)"):
-    """Render a Cartopy map of temp difference on a Lambert Conformal projection."""
+def plot_tempdiff_map(lon: xr.DataArray, lat: xr.DataArray, tempdiff_f: xr.DataArray):
     lon_wrapped = ((lon + 180) % 360) - 180
     T = tempdiff_f.where(np.isfinite(tempdiff_f))
-    vmin, vmax = -20, 20
+    v = np.nanpercentile(np.abs(T.values), 95)
 
     fig = plt.figure(figsize=(10, 8))
     ax = plt.axes(projection=ccrs.LambertConformal(central_longitude=-95))
@@ -21,10 +19,9 @@ def plot_tempdiff_map(lon: xr.DataArray, lat: xr.DataArray, tempdiff_f: xr.DataA
 
     pc = ccrs.PlateCarree()
     p = ax.pcolormesh(lon_wrapped, lat, T, transform=pc, cmap="coolwarm",
-                      shading="nearest", vmin=vmin, vmax=vmax, rasterized=True)
+                      shading="nearest", vmin = -10, vmax = 10,  rasterized=True)
     cb = plt.colorbar(p, ax=ax, orientation="horizontal", pad=0.02, shrink=0.9)
     cb.set_label("ΔT (°F)")
-    ax.set_title(title)
     plt.tight_layout()
     return fig, ax
 
