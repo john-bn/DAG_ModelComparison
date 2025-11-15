@@ -1,0 +1,16 @@
+name: comparator
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.13
+  - xesmf
+  - pytest
+  - rioxarray
+  - cartopy
+  - herbie-data
+  - numpy
+  - pandas
+  - matplotlib
+  - xarray
+prefix: /opt/anaconda3/envs/comparator
