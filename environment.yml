@@ -9,6 +9,7 @@ dependencies:
   - rioxarray
   - cartopy
   - herbie-data
+  - herbie
   - numpy
   - pandas
   - matplotlib

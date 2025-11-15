@@ -55,7 +55,7 @@ def main():
     diffF = td.compute_tempdiff_f(ds_hrrr["t2m"], rtma_on_hrrr["t2m"])
 
     # 4️⃣ Plot the map + airports
-    fig, ax = plot.plot_tempdiff_map(ds_h["longitude"], ds_h["latitude"], diffF)
+    fig, ax = plot.plot_tempdiff_map(ds_hrrr["longitude"], ds_hrrr["latitude"], diffF)
     plot.plot_airports(ax, util.major_airports_df())
     plt.show()
 
