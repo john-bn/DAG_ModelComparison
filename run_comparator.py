@@ -53,8 +53,8 @@ def main():
     tgt_grid = {"lon": ds_hrrr["longitude"], "lat": ds_hrrr["latitude"]}
 
     # Fast sanity first (nearest) & wrap in xarray
-    regridder_fast = xe.Regridder(src_grid, tgt_grid, method="nearest_s2d", periodic=True, reuse_weights=False)
-    rtma_on_hrrr_fast = regridder_fast(ds_rtma["t2m"])
+    regridder_bilin = xe.Regridder(src_grid, tgt_grid, method="bilinear", periodic=False, reuse_weights=False)
+    rtma_on_hrrr_fast = regridder_bilin(ds_rtma["t2m"])
 
     # 3️⃣ Compute Fahrenheit temperature difference
     diffF = td.compute_tempdiff_f(ds_hrrr["t2m"], rtma_on_hrrr_fast)
