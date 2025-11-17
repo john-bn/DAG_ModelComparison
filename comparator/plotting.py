@@ -6,7 +6,7 @@ import cartopy.feature as cfeature
 import xarray as xr
 import pandas as pd
 
-def plot_tempdiff_map(lon: xr.DataArray, lat: xr.DataArray, tempdiff_f: xr.DataArray, valid_dt, cycle_dt, forecast):
+def plot_tempdiff_map(lon: xr.DataArray, lat: xr.DataArray, tempdiff_f: xr.DataArray, valid_dt, cycle_dt, forecast, model_name: str):
     lon_wrapped = ((lon + 180) % 360) - 180
     T = tempdiff_f.where(np.isfinite(tempdiff_f))
     v = np.nanpercentile(np.abs(T.values), 95)
@@ -22,7 +22,7 @@ def plot_tempdiff_map(lon: xr.DataArray, lat: xr.DataArray, tempdiff_f: xr.DataA
                       shading="nearest", vmin = -10, vmax = 10,  rasterized=True)
     cb = plt.colorbar(p, ax=ax, orientation="horizontal", pad=0.02, shrink=0.9)
     cb.set_label("ΔT (°F)")
-    ax.set_title("HRRR − RTMA: 2 m Temperature Difference at "+ valid_dt.strftime("%Y-%m-%d %H:%M Z")+ "\nHRRR initialized "+ cycle_dt.strftime("%Y-%m-%d %H:%M Z")+ f" Forecast Hour: {forecast}")
+    ax.set_title(model_name + " " + "− RTMA: 2 m Temperature Difference at "+ valid_dt.strftime("%Y-%m-%d %H:%M Z")+ "\n" + model_name.upper() + "initialized "+ cycle_dt.strftime("%Y-%m-%d %H:%M Z")+ f" Forecast Hour: {forecast}")
 
     plt.tight_layout()
     return fig, ax
