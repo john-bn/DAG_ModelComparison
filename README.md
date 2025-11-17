@@ -10,7 +10,6 @@ Develop a method that can remove GRIB2 files after downloading to reduce clutter
 
 Medium term (by 12.10)
 Develop tests that makes sure that calculations & plotting are correct
-Develop method for testing NAM3K against RTMA
 
 Long term (12.31)
 Develop method for testing HRRR against NAM3K
