@@ -6,6 +6,7 @@ from comparator import tempdiff as td
 from comparator import plotting as plot
 from comparator import util
 from datetime import datetime, timedelta
+from tempfile import gettempdir
 
 def main():
     date = input("Enter date (YYYY-MM-DD): ")
@@ -29,19 +30,23 @@ def main():
         cycle_dt,
         model="hrrr",
         product="sfc",
-        fxx=forecast
+        fxx=forecast,
+        save_dir=gettempdir(),
+        overwrite=True
     )
 
     # RTMA: pass the *valid* analysis time so it matches HRRR's valid time
     rtma = Herbie(
         valid_dt,
         model="rtma",
-        product="anl"
+        product="anl",
+        save_dir=gettempdir(),
+        overwrite=True
     )
 
     ### Load into xarray dataarrays
-    ds_hrrr = hrrr.xarray("TMP:2 m above")
-    ds_rtma = rtma.xarray("TMP:2 m above")
+    ds_hrrr = hrrr.xarray("TMP:2 m above", remove_grib=True)
+    ds_rtma = rtma.xarray("TMP:2 m above", remove_grib=True)
 
     # 2) Curvilinear grids from your HRRR/RTMA Datasets
     src_grid = {"lon": ds_rtma["longitude"], "lat": ds_rtma["latitude"]}
@@ -55,7 +60,7 @@ def main():
     diffF = td.compute_tempdiff_f(ds_hrrr["t2m"], rtma_on_hrrr_fast)
 
     # 4️⃣ Plot the map + airports
-    fig, ax = plot.plot_tempdiff_map(ds_hrrr["longitude"], ds_hrrr["latitude"], diffF)
+    fig, ax = plot.plot_tempdiff_map(ds_hrrr["longitude"], ds_hrrr["latitude"], diffF, valid_dt=valid_dt, cycle_dt=cycle_dt, forecast=forecast)
     plot.plot_airports(ax, util.major_airports_df())
     plt.show()
 
