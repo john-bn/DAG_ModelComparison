@@ -21,10 +21,6 @@ MODEL_REGISTRY = {
         "aliases": ["nam12k", "nam-12km", "nam"],
         "kwargs": {"model": "nam", "product": "awip12"},
     },
-    "ifs": {
-        "aliases": ["ifs", "ecmwf"],
-        "kwargs": {"model": "ifs", "product": "oper"},
-    },
     "nbm": {
         "aliases": ["nbm"],
         "kwargs": {"model": "nbm", "product": "co"},
@@ -35,23 +31,15 @@ MODEL_REGISTRY = {
     },
     "arw": {
         "aliases": ["arw", "ncar-arw"],
-        "kwargs": {"model": "hiresw", "product": "arw_5km", "domain": "conus", "member": 1},
-    },
-    "arw2": {
-        "aliases": ["arw2"],
-        "kwargs": {"model": "hiresw", "product": "arw_2p5km", "domain": "conus", "member": 2},
+        "kwargs": {"model": "hiresw", "product": "arw_5km", "domain": "conus", "member": 2},
     },
     "fv3": {
         "aliases": ["fv3"],
-        "kwargs": {"model": "hiresw", "product": "fv3_5km", "domain": "conus"},
+        "kwargs": {"model": "hiresw", "product": "fv3_5km", "domain": "conus", "member": 1},
     },
-    "href mean": {
-        "aliases": ["href mean"],
+    "href": {
+        "aliases": ["href"],
         "kwargs": {"model": "href", "product": "mean", "domain": "conus"},
-    },
-    "rrfs": {
-        "aliases": ["rrfs"],
-        "kwargs": {"model": "rrfs", "product": "prslev", "domain": "conus", "member": "control"}
     },
     "gfs": {
         "aliases": ["gfs"],
@@ -76,15 +64,12 @@ def normalize_model_key(user_text: str) -> str:
         raise ValueError(f"Invalid NWP model selected: {user_text}")
 
 def herbie_kwargs_for(model_key: str) -> dict:
-        """Return kwargs for Herbie(...), error if WIP."""
+        """Return kwargs for Herbie(...)"""
         entry = MODEL_REGISTRY[model_key]
-        if entry.get("wip"):
-            raise ValueError(f"Model '{model_key.upper()}' is marked WIP in this project. "
-                             f"Update MODEL_REGISTRY to enable it.")
         return dict(entry["kwargs"])  # shallow copy
 
 def main():
-    nwp_model = input("Enter NWP model to compare against RTMA : HRRR, NAM5K, NAM12K, IFS (WIP), NBM, RAP, ARW (WIP), ARW2 (WIP), FV3 (WIP), HREF (WIP), RRFS (WIP), or GFS: ").strip()
+    nwp_model = input("Enter NWP model to compare against RTMA : HRRR, NAM5K, NAM12K, NBM, RAP, ARW, FV3, HREF, or GFS: ").strip()
 
     date = input("Enter date (YYYY-MM-DD): ").strip()
     init_hour = int(input("Enter a valid initialization hour, in 24-hour Z-time: "))
