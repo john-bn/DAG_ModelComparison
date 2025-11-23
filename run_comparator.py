@@ -117,13 +117,23 @@ def main():
     # 5) Diff in °F
     diffF = td.compute_tempdiff_f(ds_nwp["t2m"], rtma_on_nwp_bilin)
 
-    # 6) Plot
-    fig, ax = plot.plot_tempdiff_map(
-        ds_nwp["longitude"], ds_nwp["latitude"], diffF,
-        valid_dt=valid_dt, cycle_dt=cycle_dt, forecast=forecast,
-        model_name=nwp_kwargs["model"].upper()
+    display_name = model_key
+
+    fig, (ax_map, ax_tbl) = plot.plot_tempdiff_map_with_table(
+        ds_nwp["longitude"],
+        ds_nwp["latitude"],
+        diffF,
+        valid_dt,
+        cycle_dt,
+        forecast,
+        display_name,                     
+        util.major_airports_df(),
+        max_rows=20,
     )
-    plot.plot_airports(ax, util.major_airports_df())
+
+    # Add airport markers/labels on the map axis
+    plot.plot_airports(ax_map, util.major_airports_df())
+
     plt.show()
 
 if __name__ == "__main__":
