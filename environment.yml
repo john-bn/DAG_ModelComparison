@@ -1,7 +1,6 @@
 name: comparator
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - python=3.13
   - xesmf
@@ -16,4 +15,3 @@ dependencies:
   - xarray
   - esmpy=8.9.0
   - esmf=8.9.0
-prefix: /opt/anaconda3/envs/comparator
