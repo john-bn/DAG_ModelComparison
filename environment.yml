@@ -14,4 +14,6 @@ dependencies:
   - pandas
   - matplotlib
   - xarray
+  - esmpy=8.9.0
+  - esmf=8.9.0
 prefix: /opt/anaconda3/envs/comparator
