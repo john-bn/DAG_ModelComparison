@@ -201,18 +201,14 @@ def plot_tempdiff_map_with_table(
 
     deltas = _nearest_values_on_geo_grid(lon, lat, tempdiff_f, pts_lon, pts_lat)
 
-    # Build table (coerce numeric, round, sort by magnitude)
+    # Build table in alphabetical order
     table_df = pd.DataFrame({
-        "ICAO": airports_df["icao"].astype(str) if "icao" in airports_df.columns else pd.Series([""] * len(airports_df)),
-        "ΔT (°F)": deltas
+    "ICAO": airports_df["icao"].astype(str),
+    "ΔT (°F)": deltas,
     })
     table_df["ΔT (°F)"] = pd.to_numeric(table_df["ΔT (°F)"], errors="coerce").round(1)
     table_df = (
-        table_df.sort_values(
-            "ΔT (°F)",
-            key=lambda s: np.abs(s.to_numpy(dtype=float)),
-            ascending=False,
-        )
+        table_df.sort_values("ICAO", ascending=True, kind="mergesort")
         .head(max_rows)
         .reset_index(drop=True)
     )
