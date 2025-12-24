@@ -63,6 +63,46 @@ def normalize_model_key(user_text: str) -> str:
                 return reg_key
         raise ValueError(f"Invalid NWP model selected: {user_text}")
 
+PRODUCT_REGISTRY = {
+    "t2m": {
+        "aliases": ["2m temp", "temp", "temperature", "2m temperature", "t2m"],
+        "search": "TMP:2 m above",
+        "var": "t2m",
+        "plot": {
+            "title": "2-m Temperature Difference (°F)",
+            "cmap": "RdBu_r",
+            "units": "°F",
+            "vmin": -15,
+            "vmax": 15,
+        },
+    },
+    "d2m": {
+        "aliases": ["2m dewpoint", "dewpoint", "dpt", "2m dpt", "d2m"],
+        "search": "DPT:2 m above",
+        "var": "d2m",
+        "plot": {
+            "title": "2-m Dewpoint Difference (°F)",
+            "cmap": "BrBG",
+            "units": "°F",
+            "vmin": -15,
+            "vmax": 15,
+        },
+    },
+}
+
+
+def normalize_product_key(user_text: str) -> str:
+    key = user_text.strip().lower()
+    # direct hit (if user types "t2m" or "d2m")
+    if key in PRODUCT_REGISTRY:
+        return key
+    # alias hit
+    for reg_key, entry in PRODUCT_REGISTRY.items():
+        if key in entry.get("aliases", []):
+            return reg_key
+    raise ValueError(f"Invalid product selected: {user_text}")
+
+
 def herbie_kwargs_for(model_key: str) -> dict:
         """Return kwargs for Herbie(...)"""
         entry = MODEL_REGISTRY[model_key]
@@ -71,9 +111,17 @@ def herbie_kwargs_for(model_key: str) -> dict:
 def main():
     nwp_model = input("Enter NWP model to compare against RTMA : HRRR, NAM5K, NAM12K, NBM, RAP, ARW, FV3, HREF, or GFS: ").strip()
 
+    product_text = input("Enter the product to analyze: 2m Temp, 2m Dewpoint: ").strip()
+
     date = input("Enter date (YYYY-MM-DD): ").strip()
     init_hour = int(input("Enter a valid initialization hour, in 24-hour Z-time: "))
     forecast = int(input("Enter a valid forecast hour, in 24-hour Z-time: "))
+
+    try:
+        product_key = normalize_product_key(product_text)   # <-- THIS is the important step
+    except ValueError as e:
+        print(e)
+        return
 
     # 1) Build cycle + valid datetimes
     cycle_dt = datetime.fromisoformat(f"{date} {init_hour:02d}:00")
@@ -85,6 +133,7 @@ def main():
     except ValueError as e:
         print(e)
         return
+    meta = PRODUCT_REGISTRY[product_key]
 
     # 2) Build Herbie objects using kwargs registry
     nwp = Herbie(
@@ -105,17 +154,17 @@ def main():
     )
 
     # 3) Load fields
-    ds_nwp = nwp.xarray("TMP:2 m above", remove_grib=True)
-    ds_rtma = rtma.xarray("TMP:2 m above", remove_grib=True)
+    ds_nwp  = nwp.xarray(meta["search"], remove_grib=True)
+    ds_rtma = rtma.xarray(meta["search"], remove_grib=True)
 
     # 4) Regrid RTMA to NWP grid
     src_grid = {"lon": ds_rtma["longitude"], "lat": ds_rtma["latitude"]}
     tgt_grid = {"lon": ds_nwp["longitude"], "lat": ds_nwp["latitude"]}
     regridder_bilin = xe.Regridder(src_grid, tgt_grid, method="bilinear", periodic=False, reuse_weights=False)
-    rtma_on_nwp_bilin = regridder_bilin(ds_rtma["t2m"])
+    rtma_on_nwp_bilin = regridder_bilin(ds_rtma[PRODUCT_REGISTRY[product_key]["var"]])
 
     # 5) Diff in °F
-    diffF = td.compute_tempdiff_f(ds_nwp["t2m"], rtma_on_nwp_bilin)
+    diffF = td.compute_tempdiff_f(ds_nwp[PRODUCT_REGISTRY[product_key]["var"]], rtma_on_nwp_bilin)
 
     display_name = model_key
 
