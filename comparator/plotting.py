@@ -1,3 +1,4 @@
+from matplotlib import units
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
@@ -62,8 +63,11 @@ def plot_tempdiff_map(
         shading="nearest", vmin=-10, vmax=10, rasterized=True
     )
 
-    cb = plt.colorbar(p, ax=ax, orientation="horizontal", pad=0.02, shrink=0.9)
-    cb.set_label("ΔT (°F)")
+    plt.colorbar(p, ax=ax_map, orientation="horizontal", pad=0.02, shrink=0.8, label="ΔT (°F)")
+    cb = plt.colorbar(p, ax=ax_map, orientation="horizontal", pad=0.02, shrink=0.8)
+    if units:
+        cb.set_label(units)
+
 
     ax.set_title(
         f"{model_name.upper()} − RTMA: 2 m Temperature Difference\n"
@@ -187,8 +191,19 @@ def plot_tempdiff_map_with_table(
     forecast,
     model_name: str,
     airports_df: pd.DataFrame,
+    plot_meta: dict,
     max_rows: int = 20,
 ):
+     # --- Plot metadata defaults ---
+    if plot_meta is None:
+        plot_meta = {}
+
+    title = plot_meta.get("title", "Difference")
+    units = plot_meta.get("units", "")
+    cmap = plot_meta.get("cmap", "RdBu_r")
+    vmin = plot_meta.get("vmin", None)
+    vmax = plot_meta.get("vmax", None)
+
     """Draw the CONUS map and add a ΔT table of selected airports."""
 
     # --- Compute ΔT at airport locations (robust for 2-D or 1-D lon/lat grids) ---
@@ -229,17 +244,26 @@ def plot_tempdiff_map_with_table(
     lon_wrapped = ((lon + 180) % 360) - 180
     T = tempdiff_f.where(np.isfinite(tempdiff_f))
     p = ax_map.pcolormesh(
-        lon_wrapped, lat, T,
-        transform=PC, cmap="coolwarm",
-        shading="nearest", vmin=-10, vmax=10, rasterized=True
+        lon_wrapped,
+        lat,
+        T,
+        transform=PC,
+        cmap=cmap,
+        shading="nearest",
+        vmin=vmin,
+        vmax=vmax,
+        rasterized=True,
     )
 
     plt.colorbar(p, ax=ax_map, orientation="horizontal", pad=0.02, shrink=0.8, label="ΔT (°F)")
     ax_map.set_title(
-        f"{model_name.upper()} − RTMA: 2 m Temperature Difference\n"
-        f"Valid: {valid_dt:%Y-%m-%d %H:%MZ} | Init: {cycle_dt:%Y-%m-%d %H:%MZ} | Forecast Hour: {forecast}",
-        fontsize=11
+        f"{model_name.upper()} − RTMA: {title}\n"
+        f"Valid: {valid_dt:%Y-%m-%d %H:%MZ} | "
+        f"Init: {cycle_dt:%Y-%m-%d %H:%MZ} | "
+        f"Forecast Hour: {forecast}",
+        fontsize=11,
     )
+
     _lock_conus_view(ax_map)
 
     # Right: table

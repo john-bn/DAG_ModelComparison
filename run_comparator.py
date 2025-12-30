@@ -88,20 +88,28 @@ PRODUCT_REGISTRY = {
             "vmax": 15,
         },
     },
+    "10mwnd": {
+        "aliases": ["10m wind", "10m wnd", "10m wind speed", "10m wind direction"],
+        "search": "WIND:10 m above",
+        "var": "si10",
+        "plot": {
+            "title": "10-m Wind Difference (KTS)",
+            "cmap": "RdBu_r",
+            "units": "KTS",
+            "vmin": -40,
+            "vmax": 40,
+        },
+    },
 }
-
 
 def normalize_product_key(user_text: str) -> str:
     key = user_text.strip().lower()
-    # direct hit (if user types "t2m" or "d2m")
     if key in PRODUCT_REGISTRY:
         return key
-    # alias hit
     for reg_key, entry in PRODUCT_REGISTRY.items():
         if key in entry.get("aliases", []):
             return reg_key
     raise ValueError(f"Invalid product selected: {user_text}")
-
 
 def herbie_kwargs_for(model_key: str) -> dict:
         """Return kwargs for Herbie(...)"""
@@ -111,14 +119,23 @@ def herbie_kwargs_for(model_key: str) -> dict:
 def main():
     nwp_model = input("Enter NWP model to compare against RTMA : HRRR, NAM5K, NAM12K, NBM, RAP, ARW, FV3, HREF, or GFS: ").strip()
 
-    product_text = input("Enter the product to analyze: 2m Temp, 2m Dewpoint: ").strip()
+    product_text = input("Enter the product to analyze: 2m Temp, 2m Dewpoint, 10m Wind: ").strip()
+
+    try:
+        product_key = normalize_product_key(product_text)
+    except ValueError as e:
+        print(e)
+        return
+
+    meta = PRODUCT_REGISTRY[product_key]
+    plot_meta = meta["plot"]
 
     date = input("Enter date (YYYY-MM-DD): ").strip()
     init_hour = int(input("Enter a valid initialization hour, in 24-hour Z-time: "))
     forecast = int(input("Enter a valid forecast hour, in 24-hour Z-time: "))
 
     try:
-        product_key = normalize_product_key(product_text)   # <-- THIS is the important step
+        product_key = normalize_product_key(product_text) 
     except ValueError as e:
         print(e)
         return
@@ -175,8 +192,9 @@ def main():
         valid_dt,
         cycle_dt,
         forecast,
-        display_name,                     
+        display_name,
         util.major_airports_df(),
+        plot_meta=plot_meta,   
         max_rows=20,
     )
 
