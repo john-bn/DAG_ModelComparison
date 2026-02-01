@@ -1,8 +1,6 @@
-from matplotlib import units
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
-from matplotlib.colors import TwoSlopeNorm
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.mpl.geoaxes import GeoAxes  # for Pylance typing help
@@ -14,6 +12,11 @@ from matplotlib.gridspec import GridSpec
 CONUS_LON_MIN, CONUS_LON_MAX = -125.0, -66.5
 CONUS_LAT_MIN, CONUS_LAT_MAX = 20.0, 50.0
 PC = ccrs.PlateCarree()
+
+
+def _wrap180(lon_vals: np.ndarray) -> np.ndarray:
+    """Wrap longitudes to [-180, 180]."""
+    return ((lon_vals.astype(float) + 180.0) % 360.0) - 180.0
 
 
 def _lock_conus_view(ax: GeoAxes):
@@ -35,6 +38,44 @@ def _lock_conus_view(ax: GeoAxes):
     ax.set_autoscale_on(False)  # <- prevent later draws from changing limits
 
 
+def _init_conus_map(fig: plt.Figure, spec=None) -> GeoAxes:
+    proj = ccrs.LambertConformal(central_longitude=-95, standard_parallels=(33, 45))
+    if spec is None:
+        ax: GeoAxes = fig.add_subplot(1, 1, 1, projection=proj)
+    else:
+        ax = fig.add_subplot(spec, projection=proj)
+    _lock_conus_view(ax)
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.6)  # type: ignore
+    ax.add_feature(cfeature.BORDERS, linewidth=0.6)    # type: ignore
+    ax.add_feature(cfeature.STATES, linewidth=0.4)     # type: ignore
+    return ax
+
+
+def _plot_tempdiff_mesh(
+    ax: GeoAxes,
+    lon: xr.DataArray,
+    lat: xr.DataArray,
+    tempdiff_f: xr.DataArray,
+    *,
+    cmap: str,
+    vmin: float | None = None,
+    vmax: float | None = None,
+):
+    lon_wrapped = _wrap180(np.asarray(lon))
+    T = tempdiff_f.where(np.isfinite(tempdiff_f))
+    return ax.pcolormesh(
+        lon_wrapped,
+        lat,
+        T,
+        transform=PC,
+        cmap=cmap,
+        shading="nearest",
+        vmin=vmin,
+        vmax=vmax,
+        rasterized=True,
+    )
+
+
 def plot_tempdiff_map(
     lon: xr.DataArray,
     lat: xr.DataArray,
@@ -45,43 +86,35 @@ def plot_tempdiff_map(
     model_name: str,
 ):
     """Original plotting routine (kept intact)."""
-    lon_wrapped = ((lon + 180) % 360) - 180
-    T = tempdiff_f.where(np.isfinite(tempdiff_f))
-
     fig = plt.figure(figsize=(10, 8))
-    proj = ccrs.LambertConformal(central_longitude=-95, standard_parallels=(33, 45))
-    ax: GeoAxes = plt.axes(projection=proj) # type: ignore
-
-    _lock_conus_view(ax)
-
-    ax.add_feature(cfeature.COASTLINE, linewidth=0.6)  # type: ignore
-    ax.add_feature(cfeature.BORDERS, linewidth=0.6)    # type: ignore
-    ax.add_feature(cfeature.STATES, linewidth=0.4)     # type: ignore
-
-    p = ax.pcolormesh(
-        lon_wrapped,
+    ax = _init_conus_map(fig)
+    p = _plot_tempdiff_mesh(
+        ax,
+        lon,
         lat,
-        T,
-        transform=PC,
+        tempdiff_f,
         cmap="coolwarm",
-        vmax=10,
         vmin=-10,
-        shading="nearest",
-        rasterized=True,
+        vmax=10,
     )
 
-    plt.colorbar(p, ax=ax, orientation="horizontal", pad=0.02, shrink=0.8, label="ΔT (°F)", vmax=10, vmin=-10)
-    cb = plt.colorbar(p, ax=ax, orientation="horizontal", pad=0.02, shrink=0.8, vmax=10, vmin=-10)
-
+    plt.colorbar(
+        p,
+        ax=ax,
+        orientation="horizontal",
+        pad=0.02,
+        shrink=0.8,
+        label="ΔT (°F)",
+    )
     ax.set_title(
         f"{model_name.upper()} − RTMA: 2 m Temperature Difference\n"
         f"Valid: {valid_dt:%Y-%m-%d %H:%MZ} | Init: {cycle_dt:%Y-%m-%d %H:%MZ} | Forecast Hour: {forecast}",
         fontsize=11
     )
 
-    _lock_conus_view(ax)
     plt.tight_layout()
     return fig, ax
+
 
 def plot_airports(ax: GeoAxes, airports: pd.DataFrame):
     """Scatter and label airports on an existing axis."""
@@ -109,11 +142,6 @@ try:
 except Exception:
     cKDTree = None  # type: ignore[assignment]
     _HAS_KDTREE = False
-
-
-def _wrap180(lon_vals: np.ndarray) -> np.ndarray:
-    """Wrap longitudes to [-180, 180]."""
-    return ((lon_vals.astype(float) + 180.0) % 360.0) - 180.0
 
 
 def _as_float_array(a) -> np.ndarray:
@@ -199,17 +227,12 @@ def plot_tempdiff_map_with_table(
     var_title: str = "2 m Temperature",
     var_cmap: str = "coolwarm",
 ):
-     # --- Plot metadata defaults ---
-    if plot_meta is None:
-        plot_meta = {}
-
-    title = plot_meta.get("title", "Difference")
-    units = plot_meta.get("units", "")
-    cmap = plot_meta.get("cmap", "RdBu_r")
-    vmin = plot_meta.get("vmin", None)
-    vmax = plot_meta.get("vmax", None)
-
     """Draw the CONUS map and add a ΔT table of selected airports."""
+    plot_meta = plot_meta or {}
+    title = plot_meta.get("title", "Difference")
+    cmap = plot_meta.get("cmap", "RdBu_r")
+    vmin = plot_meta.get("vmin")
+    vmax = plot_meta.get("vmax")
 
     # --- Compute ΔT at airport locations (robust for 2-D or 1-D lon/lat grids) ---
     airports_df = airports_df.copy()
@@ -223,8 +246,8 @@ def plot_tempdiff_map_with_table(
 
     # Build table in alphabetical order
     table_df = pd.DataFrame({
-    "ICAO": airports_df["icao"].astype(str),
-    "ΔT (°F)": deltas,
+        "ICAO": airports_df["icao"].astype(str),
+        "ΔT (°F)": deltas,
     })
     table_df["ΔT (°F)"] = pd.to_numeric(table_df["ΔT (°F)"], errors="coerce").round(1)
     table_df = (
@@ -238,29 +261,25 @@ def plot_tempdiff_map_with_table(
     gs = GridSpec(1, 2, figure=fig, width_ratios=[3.3, 1.0])
 
     # Left: map
-    proj = ccrs.LambertConformal(central_longitude=-95, standard_parallels=(33, 45))
-    ax_map: GeoAxes = fig.add_subplot(gs[0, 0], projection=proj)
-
-    _lock_conus_view(ax_map)
-    ax_map.add_feature(cfeature.COASTLINE, linewidth=0.6) 
-    ax_map.add_feature(cfeature.BORDERS, linewidth=0.6)   
-    ax_map.add_feature(cfeature.STATES, linewidth=0.4)     
-
-    lon_wrapped = ((lon + 180) % 360) - 180
-    T = tempdiff_f.where(np.isfinite(tempdiff_f))
-    p = ax_map.pcolormesh(
-        lon_wrapped,
+    ax_map = _init_conus_map(fig, gs[0, 0])
+    p = _plot_tempdiff_mesh(
+        ax_map,
+        lon,
         lat,
-        T,
-        transform=PC,
+        tempdiff_f,
         cmap=cmap,
-        shading="nearest",
         vmin=vmin,
         vmax=vmax,
-        rasterized=True,
     )
 
-    plt.colorbar(p, ax=ax_map, orientation="horizontal", pad=0.02, shrink=0.8, label="ΔT (°F)")
+    plt.colorbar(
+        p,
+        ax=ax_map,
+        orientation="horizontal",
+        pad=0.02,
+        shrink=0.8,
+        label="ΔT (°F)",
+    )
     ax_map.set_title(
         f"{model_name.upper()} − RTMA: {title}\n"
         f"Valid: {valid_dt:%Y-%m-%d %H:%MZ} | "
@@ -268,8 +287,6 @@ def plot_tempdiff_map_with_table(
         f"Forecast Hour: {forecast}",
         fontsize=11,
     )
-
-    _lock_conus_view(ax_map)
 
     # Right: table
     ax_tbl = fig.add_subplot(gs[0, 1])
