@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 
-def compute_tempdiff_f(hrrr_t2m: xr.DataArray, rtma_on_hrrr_t2m) -> xr.DataArray:
+def compute_fielddiff(hrrr_t2m: xr.DataArray, rtma_on_hrrr_t2m) -> xr.DataArray:
     """
     Compute Fahrenheit temperature difference HRRR - RTMA on the SAME grid.
     Assumes inputs are Kelvin on identical (y,x,time) coords.

@@ -193,6 +193,8 @@ def plot_tempdiff_map_with_table(
     airports_df: pd.DataFrame,
     plot_meta: dict,
     max_rows: int = 20,
+    var_title: str = "2 m Temperature",
+    var_cmap: str = "coolwarm",
 ):
      # --- Plot metadata defaults ---
     if plot_meta is None:
@@ -282,7 +284,7 @@ def plot_tempdiff_map_with_table(
     tbl.auto_set_font_size(False)
     tbl.set_fontsize(9)
     tbl.scale(1.0, 1.2)
-    ax_tbl.set_title("Airport ΔT (°F)", fontsize=11, pad=8)
+    ax_tbl.set_title(f"Airport", fontsize=11, pad=8)
 
     # Optional: tint ΔT column cells by sign (add small ignore to hush Pylance)
     try:
