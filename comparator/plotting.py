@@ -43,7 +43,7 @@ def _lock_conus_view(ax: GeoAxes):
 def _init_conus_map(fig: Figure, spec=None) -> GeoAxes:
     proj = ccrs.LambertConformal(central_longitude=-95, standard_parallels=(33, 45))
     if spec is None:
-        ax: GeoAxes = fig.add_subplot(1, 1, 1, projection=proj)
+        ax: GeoAxes = fig.add_subplot(1, 1, 1, projection=proj)  # type: ignore
     else:
         ax = fig.add_subplot(spec, projection=proj)
     _lock_conus_view(ax)
@@ -276,7 +276,7 @@ def plot_tempdiff_map_with_table(
         for i in range(len(table_df)):
             val = table_df.iloc[i, col_idx]
             try:
-                fval = float(val)
+                fval = float(val)  # type: ignore
             except Exception:
                 fval = np.nan
 
