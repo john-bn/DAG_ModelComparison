@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import TwoSlopeNorm
 from matplotlib.figure import Figure
 import matplotlib.patheffects as pe
 import cartopy.crs as ccrs
@@ -59,6 +60,7 @@ def _plot_tempdiff_mesh(
     tempdiff_f: xr.DataArray,
     *,
     cmap: str,
+    norm: TwoSlopeNorm | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
 ):
@@ -71,8 +73,9 @@ def _plot_tempdiff_mesh(
         transform=PC,
         cmap=cmap,
         shading="nearest",
-        vmin=vmin,
-        vmax=vmax,
+        norm=norm,
+        vmin=vmin if norm is None else None,
+        vmax=vmax if norm is None else None,
         rasterized=True,
     )
 
@@ -95,8 +98,7 @@ def plot_tempdiff_map(
         lat,
         tempdiff_f,
         cmap="coolwarm",
-        vmin=-10,
-        vmax=10,
+        norm=TwoSlopeNorm(vmin=-20, vcenter=0.0, vmax=20),
     )
 
     plt.colorbar(
@@ -232,8 +234,10 @@ def plot_tempdiff_map_with_table(
     plot_meta = plot_meta or {}
     title = plot_meta.get("title", "Difference")
     cmap = plot_meta.get("cmap", "RdBu_r")
-    vmin = plot_meta.get("vmin")
-    vmax = plot_meta.get("vmax")
+    vmin = plot_meta.get("vmin", -20)
+    vmax = plot_meta.get("vmax", 20)
+    vcenter = plot_meta.get("vcenter", 0.0)
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
 
     # --- Compute ΔT at airport locations (robust for 2-D or 1-D lon/lat grids) ---
     airports_df = airports_df.copy()
@@ -269,8 +273,7 @@ def plot_tempdiff_map_with_table(
         lat,
         tempdiff_f,
         cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
+        norm=norm,
     )
 
     plt.colorbar(
