@@ -79,46 +79,6 @@ def _plot_tempdiff_mesh(
         rasterized=True,
     )
 
-
-def plot_tempdiff_map(
-    lon: xr.DataArray,
-    lat: xr.DataArray,
-    tempdiff_f: xr.DataArray,
-    valid_dt,
-    cycle_dt,
-    forecast,
-    model_name: str,
-):
-    """Original plotting routine (kept intact)."""
-    fig = plt.figure(figsize=(10, 8))
-    ax = _init_conus_map(fig)
-    p = _plot_tempdiff_mesh(
-        ax,
-        lon,
-        lat,
-        tempdiff_f,
-        cmap="coolwarm",
-        norm=TwoSlopeNorm(vmin=-20, vcenter=0.0, vmax=20),
-    )
-
-    plt.colorbar(
-        p,
-        ax=ax,
-        orientation="horizontal",
-        pad=0.02,
-        shrink=0.8,
-        label="ΔT (°F)",
-    )
-    ax.set_title(
-        f"{model_name.upper()} − RTMA: 2 m Temperature Difference\n"
-        f"Valid: {valid_dt:%Y-%m-%d %H:%MZ} | Init: {cycle_dt:%Y-%m-%d %H:%MZ} | Forecast Hour: {forecast}",
-        fontsize=11
-    )
-
-    plt.tight_layout()
-    return fig, ax
-
-
 def plot_airports(ax: GeoAxes, airports: pd.DataFrame):
     """Scatter and label airports on an existing axis."""
     a = airports[
@@ -234,8 +194,8 @@ def plot_tempdiff_map_with_table(
     plot_meta = plot_meta or {}
     title = plot_meta.get("title", "Difference")
     cmap = plot_meta.get("cmap", "RdBu_r")
-    vmin = plot_meta.get("vmin", -20)
-    vmax = plot_meta.get("vmax", 20)
+    vmin = plot_meta.get("vmin", -15)
+    vmax = plot_meta.get("vmax", 15)
     vcenter = plot_meta.get("vcenter", 0.0)
     norm = TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
 
