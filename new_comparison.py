@@ -210,7 +210,8 @@ def main():
         util.major_airports_df(),
         max_rows=20,
         var_title=var_title, 
-        var_cmap=var_cmap       
+        var_cmap=var_cmap,
+        plot_meta=var_meta
     )
 
     # Add airport markers/labels on the map axis

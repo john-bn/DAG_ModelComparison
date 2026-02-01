@@ -2,6 +2,7 @@ from matplotlib import units
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
+from matplotlib.colors import TwoSlopeNorm
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.mpl.geoaxes import GeoAxes  # for Pylance typing help
@@ -57,17 +58,21 @@ def plot_tempdiff_map(
     ax.add_feature(cfeature.BORDERS, linewidth=0.6)    # type: ignore
     ax.add_feature(cfeature.STATES, linewidth=0.4)     # type: ignore
 
+    norm = TwoSlopeNorm(vmin=-10, vcenter=0.0, vmax=10)
+
     p = ax.pcolormesh(
-        lon_wrapped, lat, T,
-        transform=PC, cmap="coolwarm",
-        shading="nearest", vmin=-10, vmax=10, rasterized=True
+        lon_wrapped,
+        lat,
+        T,
+        transform=PC,
+        cmap="coolwarm",
+        norm=norm,
+        shading="nearest",
+        rasterized=True,
     )
 
-    plt.colorbar(p, ax=ax_map, orientation="horizontal", pad=0.02, shrink=0.8, label="ΔT (°F)")
-    cb = plt.colorbar(p, ax=ax_map, orientation="horizontal", pad=0.02, shrink=0.8)
-    if units:
-        cb.set_label(units)
-
+    plt.colorbar(p, ax=ax, orientation="horizontal", pad=0.02, shrink=0.8, label="ΔT (°F)")
+    cb = plt.colorbar(p, ax=ax, orientation="horizontal", pad=0.02, shrink=0.8)
 
     ax.set_title(
         f"{model_name.upper()} − RTMA: 2 m Temperature Difference\n"
@@ -78,7 +83,6 @@ def plot_tempdiff_map(
     _lock_conus_view(ax)
     plt.tight_layout()
     return fig, ax
-
 
 def plot_airports(ax: GeoAxes, airports: pd.DataFrame):
     """Scatter and label airports on an existing axis."""
@@ -236,12 +240,12 @@ def plot_tempdiff_map_with_table(
 
     # Left: map
     proj = ccrs.LambertConformal(central_longitude=-95, standard_parallels=(33, 45))
-    ax_map: GeoAxes = fig.add_subplot(gs[0, 0], projection=proj) # type: ignore
+    ax_map: GeoAxes = fig.add_subplot(gs[0, 0], projection=proj)
 
     _lock_conus_view(ax_map)
-    ax_map.add_feature(cfeature.COASTLINE, linewidth=0.6)  # type: ignore
-    ax_map.add_feature(cfeature.BORDERS, linewidth=0.6)    # type: ignore
-    ax_map.add_feature(cfeature.STATES, linewidth=0.4)     # type: ignore
+    ax_map.add_feature(cfeature.COASTLINE, linewidth=0.6) 
+    ax_map.add_feature(cfeature.BORDERS, linewidth=0.6)   
+    ax_map.add_feature(cfeature.STATES, linewidth=0.4)     
 
     lon_wrapped = ((lon + 180) % 360) - 180
     T = tempdiff_f.where(np.isfinite(tempdiff_f))
