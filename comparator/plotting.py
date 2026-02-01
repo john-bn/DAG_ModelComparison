@@ -58,21 +58,20 @@ def plot_tempdiff_map(
     ax.add_feature(cfeature.BORDERS, linewidth=0.6)    # type: ignore
     ax.add_feature(cfeature.STATES, linewidth=0.4)     # type: ignore
 
-    norm = TwoSlopeNorm(vmin=-10, vcenter=0.0, vmax=10)
-
     p = ax.pcolormesh(
         lon_wrapped,
         lat,
         T,
         transform=PC,
         cmap="coolwarm",
-        norm=norm,
+        vmax=10,
+        vmin=-10,
         shading="nearest",
         rasterized=True,
     )
 
-    plt.colorbar(p, ax=ax, orientation="horizontal", pad=0.02, shrink=0.8, label="ΔT (°F)")
-    cb = plt.colorbar(p, ax=ax, orientation="horizontal", pad=0.02, shrink=0.8)
+    plt.colorbar(p, ax=ax, orientation="horizontal", pad=0.02, shrink=0.8, label="ΔT (°F)", vmax=10, vmin=-10)
+    cb = plt.colorbar(p, ax=ax, orientation="horizontal", pad=0.02, shrink=0.8, vmax=10, vmin=-10)
 
     ax.set_title(
         f"{model_name.upper()} − RTMA: 2 m Temperature Difference\n"
