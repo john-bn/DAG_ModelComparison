@@ -1,4 +1,3 @@
-
 ### Model & Variable Registries
 MODEL_REGISTRY = {
     "hrrr": {
