@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 import matplotlib.patheffects as pe
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
@@ -38,7 +39,7 @@ def _lock_conus_view(ax: GeoAxes):
     ax.set_autoscale_on(False)  # <- prevent later draws from changing limits
 
 
-def _init_conus_map(fig: plt.Figure, spec=None) -> GeoAxes:
+def _init_conus_map(fig: Figure, spec=None) -> GeoAxes:
     proj = ccrs.LambertConformal(central_longitude=-95, standard_parallels=(33, 45))
     if spec is None:
         ax: GeoAxes = fig.add_subplot(1, 1, 1, projection=proj)
