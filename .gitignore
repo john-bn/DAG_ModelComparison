@@ -1,0 +1,36 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.env/
+.venv/
+venv/
+
+# Conda
+.conda/
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local config
+config.yaml
+
+# Data and outputs
+data/
+figures/
+output/
+*.grib2
+*.grb
+*.nc
+
+# Logs
+*.log

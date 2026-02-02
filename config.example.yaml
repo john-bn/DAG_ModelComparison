@@ -1,0 +1,23 @@
+# Data settings
+data:
+  cache_dir: "./data"
+  overwrite: false
+
+# Models to compare
+models:
+  - hrrr
+  - nam12k
+
+# Variable selection
+variable: t2m
+
+# Plot settings
+plot:
+  domain: conus
+  cmap: diverging
+  center_on_zero: true
+  output_dir: "./figures"
+
+# Time settings
+time:
+  valid_time: "2026-02-01T12:00Z"
