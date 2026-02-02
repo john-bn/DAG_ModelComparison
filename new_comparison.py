@@ -21,11 +21,11 @@ def main():
     var_cmap = var_meta["cmap"]
     var_title = var_meta["title"]
 
-    # 1) Build cycle + valid datetimes
+    # 1) Build cycle & valid datetimes
     cycle_dt = datetime.fromisoformat(f"{date} {init_hour:02d}:00")
     valid_dt = cycle_dt + timedelta(hours=forecast)
 
-    # 2) Normalize model + variable keys, pull kwargs + selector
+    # 2) Normalize model & variable keys, pull kwargs, & selector
     try:
         model_key = norm.normalize_model_key(nwp_model)
         nwp_kwargs = norm.herbie_kwargs_for(model_key)
@@ -58,7 +58,7 @@ def main():
         **rtma_kwargs,
     )
 
-    # 4) Load fields (use selector, not hard-coded TMP)
+    # 4) Load fields
     ds_nwp = nwp.xarray(selector, remove_grib=True)
     ds_rtma = rtma.xarray(selector, remove_grib=True)
 
@@ -70,7 +70,7 @@ def main():
         print(e)
         return
 
-    # 5) Regrid RTMA to NWP grid
+    # 5) Regrid RTMA to model grid
     src_grid = {"lon": ds_rtma["longitude"], "lat": ds_rtma["latitude"]}
     tgt_grid = {"lon": ds_nwp["longitude"], "lat": ds_nwp["latitude"]}
     regridder_bilin = xe.Regridder(
@@ -78,7 +78,7 @@ def main():
     )
     rtma_on_nwp_bilin = regridder_bilin(ds_rtma[rtma_varname])
 
-    # 6) Compute difference in NWP to RTMA fields (use selected variable)
+    # 6) Compute difference in NWP to RTMA fields
     diff = td.compute_fielddiff(ds_nwp[nwp_varname], rtma_on_nwp_bilin)
 
     display_name = model_key
@@ -98,7 +98,7 @@ def main():
         plot_meta=var_meta
     )
 
-    # Add airport markers/labels on the map axis
+    # Add airport markers & labels on the map axis
     plot.plot_airports(ax_map, util.major_airports_df())
 
     plt.show()
