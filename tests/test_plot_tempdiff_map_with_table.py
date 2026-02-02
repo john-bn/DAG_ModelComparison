@@ -72,8 +72,4 @@ def test_plot_tempdiff_map_with_table_norm_and_table_sort(tmp_path):
     assert icaos == sorted(icaos)
 
     # Smoke save
-    out = tmp_path / "smoke.png"
-    fig.savefig(out, dpi=100)
-    assert out.exists()
-
-    return fig  # for mpl_image_compare marker if you later enable image comparisons
+    fig.savefig(tmp_path / "smoke.png")
