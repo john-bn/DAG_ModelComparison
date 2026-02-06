@@ -19,5 +19,4 @@ DAG_ModelComparison/
 ├── comparator/        # Core comparison logic
 ├── plotting/          # Cartopy / Matplotlib figures
 ├── util.py/           # Shared helpers
-├── scripts.py/.       # Driver script
-├── run_comparator.py  # Driver
+├── scripts.py/        # Driver script
