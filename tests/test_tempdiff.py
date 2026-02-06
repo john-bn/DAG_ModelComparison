@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from DAG_ModelComparison.comparator.tempdiff import compute_fielddiff
+from comparator.fielddiff import compute_fielddiff
 
 
 def _da(vals, name="t2m"):
