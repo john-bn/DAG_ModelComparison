@@ -1,8 +1,0 @@
-xarray
-numpy
-pandas
-matplotlib
-cartopy
-xesmf
-herbie-data
-rioxarray
