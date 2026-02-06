@@ -2,7 +2,7 @@
 from herbie.core import Herbie
 import xesmf as xe
 import matplotlib.pyplot as plt
-from comparator import tempdiff as td
+from comparator import fielddiff as fd
 from comparator import plotting as plot
 from comparator import util
 from comparator import normalize as norm
@@ -79,7 +79,7 @@ def main():
     rtma_on_nwp_bilin = regridder_bilin(ds_rtma[rtma_varname])
 
     # 6) Compute difference in NWP to RTMA fields
-    diff = td.compute_fielddiff(ds_nwp[nwp_varname], rtma_on_nwp_bilin)
+    diff = fd.compute_fielddiff(ds_nwp[nwp_varname], rtma_on_nwp_bilin)
 
     display_name = model_key
 
