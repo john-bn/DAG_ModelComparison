@@ -18,5 +18,6 @@ A diagram of the file tree is as follows:
 DAG_ModelComparison/
 ├── comparator/        # Core comparison logic
 ├── plotting/          # Cartopy / Matplotlib figures
-├── util.py            # Shared helpers
+├── util.py/           # Shared helpers
+├── scripts.py/.       # Driver script
 ├── run_comparator.py  # Driver
