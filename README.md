@@ -20,3 +20,22 @@ DAG_ModelComparison/
 ├── plotting/          # Cartopy / Matplotlib figures
 ├── util.py/           # Shared helpers
 ├── scripts.py/        # Driver script
+
+How to run:
+
+1. Create the conda environment
+
+conda env create -f environment.yml
+conda activate new_comparator
+
+1. Install package in editable mode
+
+pip install -e .
+
+1. Create your config
+
+cp config.example.yaml config.yaml
+
+1. Run
+
+python scripts/run_comparator.py --config config.yaml
