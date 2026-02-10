@@ -42,7 +42,7 @@ python scripts/run_comparator.py --config config.yaml
 
 TODO:
 
-1. Add functionality for RAP & HREF
+1. Add functionality for HREF
 
 2. Add functionality for URMA
 

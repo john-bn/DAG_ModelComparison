@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from tempfile import gettempdir
 
 def main():
-    nwp_model = input("Enter NWP model to compare against RTMA : HRRR, NBM, ARW, FV3, GFS: ").strip()
+    nwp_model = input("Enter NWP model to compare against RTMA : HRRR, RAP, NBM, ARW, FV3, GFS: ").strip()
 
     date = input("Enter date (YYYY-MM-DD): ").strip()
     init_hour = int(input("Enter a valid initialization hour, in 24-hour Z-time: "))

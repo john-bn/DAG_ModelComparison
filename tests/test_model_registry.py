@@ -55,3 +55,7 @@ def test_no_duplicate_aliases_across_models():
             if a in seen:
                 raise AssertionError(f"Alias '{alias}' is used for BOTH '{seen[a]}' and '{model_key}'")
             seen[a] = model_key
+
+
+def test_rap_registry_uses_downloadable_native_grid_product():
+    assert MODEL_REGISTRY["rap"]["kwargs"]["product"] == "awp130bgrb"

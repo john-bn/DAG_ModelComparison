@@ -20,6 +20,7 @@ def test_normalize_model_key_alias_hit():
     assert normalize_model_key("namnest") == "nam5k"
     assert normalize_model_key("NAM-12km") == "nam12k"
     assert normalize_model_key("ncar-arw") == "arw"
+    assert normalize_model_key("rapid refresh") == "rap"
 
 
 def test_normalize_model_key_invalid_raises():
