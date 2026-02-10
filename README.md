@@ -39,3 +39,11 @@ cp config.example.yaml config.yaml
 1. Run
 
 python scripts/run_comparator.py --config config.yaml
+
+TODO:
+
+1. Add functionality for RAP & HREF
+
+2. Add functionality for URMA
+
+3. Add functionality for 10m wind magnitude
