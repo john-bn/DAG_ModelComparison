@@ -17,8 +17,8 @@ MODEL_REGISTRY = {
         "kwargs": {"model": "nbm", "product": "co"},
     },
     "rap": {
-        "aliases": ["rap"],
-        "kwargs": {"model": "rap", "product": "awp130pgrb"},
+        "aliases": ["rap", "rapid refresh"],
+        "kwargs": {"model": "rap", "product": "awp130bgrb"},
     },
     "arw": {
         "aliases": ["arw", "ncar-arw"],
