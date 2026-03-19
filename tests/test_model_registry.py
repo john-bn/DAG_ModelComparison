@@ -57,6 +57,20 @@ def test_no_duplicate_aliases_across_models():
             seen[a] = model_key
 
 
+@pytest.mark.parametrize("model_key, entry", MODEL_REGISTRY.items())
+def test_xarray_kwargs_shape_when_present(model_key, entry):
+    """If a model has xarray_kwargs, it must be a dict with valid structure."""
+    xr_kw = entry.get("xarray_kwargs")
+    if xr_kw is None:
+        return
+    assert isinstance(xr_kw, dict), f"{model_key} xarray_kwargs must be a dict"
+    if "backend_kwargs" in xr_kw:
+        bk = xr_kw["backend_kwargs"]
+        assert isinstance(bk, dict), f"{model_key} backend_kwargs must be a dict"
+        if "read_keys" in bk:
+            assert isinstance(bk["read_keys"], list), f"{model_key} read_keys must be a list"
+
+
 def test_rap_registry_uses_downloadable_native_grid_product():
     assert MODEL_REGISTRY["rap"]["kwargs"]["product"] == "awp130bgrb"
 

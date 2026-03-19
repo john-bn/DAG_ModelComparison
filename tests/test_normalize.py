@@ -9,6 +9,7 @@ from DAG_ModelComparison.comparator.normalize import (
     normalize_var_key,
     pick_data_varname_from_ds,
     get_selector,
+    get_xarray_kwargs,
     wrap_longitude,
     ensure_dataset,
 )
@@ -157,3 +158,53 @@ def test_ensure_dataset_returns_first_from_list():
     ds1 = xr.Dataset({"t2m": (("x",), [1, 2, 3])})
     ds2 = xr.Dataset({"t2m": (("x",), [4, 5, 6])})
     assert ensure_dataset([ds1, ds2]) is ds1
+
+
+def test_ensure_dataset_picks_dataset_with_target_var():
+    """When var_key is given, pick the dataset containing a candidate variable."""
+    ds_other = xr.Dataset({"wind": (("x",), [1, 2, 3])})
+    ds_temp = xr.Dataset({"t2m": (("x",), [4, 5, 6])})
+    # t2m is a TMP candidate — should pick ds_temp even though it's second
+    assert ensure_dataset([ds_other, ds_temp], var_key="TMP") is ds_temp
+
+
+def test_ensure_dataset_falls_back_to_first_when_no_match():
+    """If no dataset contains a candidate variable, fall back to the first."""
+    ds1 = xr.Dataset({"foo": (("x",), [1])})
+    ds2 = xr.Dataset({"bar": (("x",), [2])})
+    assert ensure_dataset([ds1, ds2], var_key="TMP") is ds1
+
+
+def test_ensure_dataset_substring_match_in_list():
+    """Substring candidate matching works across multi-hypercube datasets."""
+    ds_other = xr.Dataset({"wind": (("x",), [1])})
+    ds_temp = xr.Dataset({"t2m_surface": (("x",), [2])})
+    assert ensure_dataset([ds_other, ds_temp], var_key="TMP") is ds_temp
+
+
+def test_get_xarray_kwargs_href_has_derived_forecast():
+    kw = get_xarray_kwargs("href")
+    assert "backend_kwargs" in kw
+    assert "derivedForecast" in kw["backend_kwargs"]["read_keys"]
+
+
+def test_get_xarray_kwargs_returns_empty_for_standard_models():
+    assert get_xarray_kwargs("hrrr") == {}
+    assert get_xarray_kwargs("gfs") == {}
+
+
+def test_get_xarray_kwargs_returns_copy():
+    kw1 = get_xarray_kwargs("href")
+    kw2 = get_xarray_kwargs("href")
+    assert kw1 == kw2
+    assert kw1 is not kw2
+
+
+def test_ds_candidates_include_eccodes_short_names():
+    """TMP and DPT candidates should include eccodes short names for PDT 4.2."""
+    tmp_cands = VAR_REGISTRY["TMP"]["ds_candidates"]
+    assert "t" in tmp_cands
+    assert "2t" in tmp_cands
+    dpt_cands = VAR_REGISTRY["DPT"]["ds_candidates"]
+    assert "d" in dpt_cands
+    assert "2d" in dpt_cands
