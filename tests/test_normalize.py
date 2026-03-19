@@ -1,7 +1,7 @@
 import pytest
 import xarray as xr
 
-from DAG_ModelComparison.comparator.normalize import (
+from comparator.normalize import (
     MODEL_REGISTRY,
     VAR_REGISTRY,
     normalize_model_key,
