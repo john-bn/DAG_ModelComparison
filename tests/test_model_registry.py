@@ -59,3 +59,11 @@ def test_no_duplicate_aliases_across_models():
 
 def test_rap_registry_uses_downloadable_native_grid_product():
     assert MODEL_REGISTRY["rap"]["kwargs"]["product"] == "awp130bgrb"
+
+
+def test_ifs_selector_map_covers_all_variables():
+    from DAG_ModelComparison.comparator.normalize import VAR_REGISTRY
+    entry = MODEL_REGISTRY["ifs"]
+    assert "selector_map" in entry
+    for var_key in VAR_REGISTRY:
+        assert var_key in entry["selector_map"], f"IFS selector_map missing {var_key}"

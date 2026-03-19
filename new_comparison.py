@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from tempfile import gettempdir
 
 def main():
-    nwp_model = input("Enter NWP model to compare against RTMA : HRRR, RAP, NBM, ARW, FV3, GFS: ").strip()
+    nwp_model = input("Enter NWP model to compare against RTMA : HRRR, RAP, NBM, ARW, FV3, GFS, IFS: ").strip()
 
     date = input("Enter date (YYYY-MM-DD): ").strip()
     init_hour = int(input("Enter a valid initialization hour, in 24-hour Z-time: "))
@@ -35,7 +35,7 @@ def main():
 
     try:
         var_key = norm.normalize_var_key(anl_var)
-        selector = norm.VAR_REGISTRY[var_key]["selector"]
+        selector = norm.get_selector(model_key, var_key)
     except ValueError as e:
         print(e)
         return
@@ -60,7 +60,10 @@ def main():
 
     # 4) Load fields
     ds_nwp = nwp.xarray(selector, remove_grib=True)
-    ds_rtma = rtma.xarray(selector, remove_grib=True)
+    ds_nwp = norm.wrap_longitude(ds_nwp)
+
+    rtma_selector = norm.get_selector("rtma", var_key)
+    ds_rtma = rtma.xarray(rtma_selector, remove_grib=True)
 
     # Pick correct data variable names from each dataset
     try:

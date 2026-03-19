@@ -16,6 +16,9 @@ venv/
 # VS Code
 .vscode/
 
+# Egg info
+*.egg-info/
+
 # Pytest / coverage
 .pytest_cache/
 .coverage

@@ -8,6 +8,8 @@ from DAG_ModelComparison.comparator.normalize import (
     herbie_kwargs_for,
     normalize_var_key,
     pick_data_varname_from_ds,
+    get_selector,
+    wrap_longitude,
 )
 
 
@@ -93,3 +95,35 @@ def test_var_registry_has_expected_fields():
         assert "ds_candidates" in entry
         assert "title" in entry
         assert "cmap" in entry
+
+
+def test_normalize_ifs_aliases():
+    assert normalize_model_key("ifs") == "ifs"
+    assert normalize_model_key("ecmwf") == "ifs"
+
+
+def test_get_selector_ifs_uses_eccodes():
+    assert get_selector("ifs", "TMP") == ":2t:"
+    assert get_selector("ifs", "DPT") == ":2d:"
+
+
+def test_get_selector_wgrib2_fallback():
+    assert get_selector("hrrr", "TMP") == "TMP:2 m above"
+    assert get_selector("gfs", "DPT") == "DPT:2 m above"
+
+
+def test_d2m_in_dpt_candidates():
+    assert "d2m" in VAR_REGISTRY["DPT"]["ds_candidates"]
+
+
+def test_wrap_longitude_converts_0_360():
+    ds = xr.Dataset({"longitude": (("x",), [0.0, 90.0, 180.0, 270.0])})
+    result = wrap_longitude(ds)
+    assert float(result["longitude"].max()) <= 180.0
+    assert float(result["longitude"].min()) >= -180.0
+
+
+def test_wrap_longitude_noop_for_negative180():
+    ds = xr.Dataset({"longitude": (("x",), [-120.0, -90.0, 0.0, 50.0])})
+    result = wrap_longitude(ds)
+    assert list(result["longitude"].values) == [-120.0, -90.0, 0.0, 50.0]

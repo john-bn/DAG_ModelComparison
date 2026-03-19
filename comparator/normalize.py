@@ -36,6 +36,14 @@ MODEL_REGISTRY = {
         "aliases": ["gfs"],
         "kwargs": {"model": "gfs", "product": "pgrb2.0p25"},
     },
+    "ifs": {
+        "aliases": ["ifs", "ecmwf"],
+        "kwargs": {"model": "ifs", "product": "oper"},
+        "selector_map": {
+            "TMP": ":2t:",
+            "DPT": ":2d:",
+        },
+    },
     "rtma": {
         "aliases": ["rtma"],
         "kwargs": {"model": "rtma", "product": "anl"},
@@ -54,7 +62,7 @@ VAR_REGISTRY = {
     "DPT": {
         "selector": "DPT:2 m above",
         "aliases": ["2 meter dew point", "dewpoint", "dpt"],
-        "ds_candidates": ["dpt2m", "dpt", "dewpoint"],
+        "ds_candidates": ["d2m", "dpt2m", "dpt", "dewpoint"],
         "units_hint": "K",
         "title": "2 Meter Dew Point",
         "cmap": "BrBG"
@@ -78,6 +86,27 @@ def herbie_kwargs_for(model_key: str) -> dict:
     """Return kwargs for Herbie(...)"""
     entry = MODEL_REGISTRY[model_key]
     return dict(entry["kwargs"])
+
+def get_selector(model_key: str, var_key: str) -> str:
+    """Return the Herbie search string for a model+variable pair.
+
+    Models with a selector_map (eccodes-indexed, e.g. IFS) use their
+    own selectors; all others fall back to VAR_REGISTRY.
+    """
+    selector_map = MODEL_REGISTRY[model_key].get("selector_map")
+    if selector_map and var_key in selector_map:
+        return selector_map[var_key]
+    return VAR_REGISTRY[var_key]["selector"]
+
+def wrap_longitude(ds):
+    """Convert 0-360 longitudes to -180..180 if needed, then sort."""
+    lon = ds["longitude"]
+    if float(lon.max()) > 180.0:
+        wrapped = ((lon.values + 180.0) % 360.0) - 180.0
+        ds["longitude"].values[:] = wrapped
+        if ds["longitude"].ndim == 1:
+            ds = ds.sortby("longitude")
+    return ds
 
 def normalize_var_key(user_text: str) -> str:
     key = user_text.strip().lower()
