@@ -8,6 +8,7 @@ from comparator import util
 from comparator import normalize as norm
 from datetime import datetime, timedelta
 from pathlib import Path
+import gc
 import os
 
 DATA_DIR = Path("./data")
@@ -49,7 +50,7 @@ def main():
         cycle_dt,
         fxx=forecast,
         save_dir=str(DATA_DIR),
-        overwrite=True,
+        overwrite=False,
         **nwp_kwargs,
     )
     if not nwp:
@@ -62,7 +63,7 @@ def main():
         valid_dt,
         fxx=0,
         save_dir=str(DATA_DIR),
-        overwrite=True,
+        overwrite=False,
         **rtma_kwargs,
     )
     if not rtma:
@@ -104,18 +105,24 @@ def main():
     src_grid = {"lon": ds_rtma["longitude"], "lat": ds_rtma["latitude"]}
     tgt_grid = {"lon": ds_nwp["longitude"], "lat": ds_nwp["latitude"]}
     regridder_bilin = xe.Regridder(
-        src_grid, tgt_grid, method="bilinear", periodic=False, reuse_weights=False
+        src_grid, tgt_grid, method="bilinear", periodic=False, reuse_weights=True
     )
     rtma_on_nwp_bilin = regridder_bilin(ds_rtma[rtma_varname])
 
     # 6) Compute difference in NWP to RTMA fields
+    nwp_lon = ds_nwp["longitude"]
+    nwp_lat = ds_nwp["latitude"]
     diff = fd.compute_fielddiff(ds_nwp[nwp_varname], rtma_on_nwp_bilin)
+
+    # Free heavy objects to reclaim memory before plotting
+    del ds_nwp, ds_rtma, regridder_bilin, rtma_on_nwp_bilin
+    gc.collect()
 
     display_name = model_key
 
     fig, (ax_map, ax_tbl) = plot.plot_tempdiff_map_with_table(
-        ds_nwp["longitude"],
-        ds_nwp["latitude"],
+        nwp_lon,
+        nwp_lat,
         diff,
         valid_dt,
         cycle_dt,
@@ -145,6 +152,8 @@ def main():
     elif os.environ.get("CODESPACES") or os.environ.get("TERM_PROGRAM") == "vscode":
         import subprocess
         subprocess.Popen(["code", str(out_path)])
+
+    plt.close(fig)
 
 if __name__ == "__main__":
     main()
