@@ -186,6 +186,8 @@ def test_get_xarray_kwargs_href_has_derived_forecast():
     kw = get_xarray_kwargs("href")
     assert "backend_kwargs" in kw
     assert "derivedForecast" in kw["backend_kwargs"]["read_keys"]
+    # shapeOfTheEarth must be present or Herbie's get_cf_crs() will crash
+    assert "shapeOfTheEarth" in kw["backend_kwargs"]["read_keys"]
 
 
 def test_get_xarray_kwargs_returns_empty_for_standard_models():
