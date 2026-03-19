@@ -37,7 +37,20 @@ MODEL_REGISTRY = {
         },
         "xarray_kwargs": {
             "backend_kwargs": {
-                "read_keys": ["derivedForecast"],
+                "read_keys": [
+                    "derivedForecast",
+                    "parameterName",
+                    "parameterUnits",
+                    "stepRange",
+                    "uvRelativeToGrid",
+                    "shapeOfTheEarth",
+                    "orientationOfTheGridInDegrees",
+                    "southPoleOnProjectionPlane",
+                    "LaDInDegrees",
+                    "LoVInDegrees",
+                    "Latin1InDegrees",
+                    "Latin2InDegrees",
+                ],
             },
         },
     },
