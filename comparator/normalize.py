@@ -31,6 +31,15 @@ MODEL_REGISTRY = {
     "href": {
         "aliases": ["href"],
         "kwargs": {"model": "href", "product": "mean", "domain": "conus"},
+        "selector_map": {
+            "TMP": r"TMP:2 m above ground:\d+ hour fcst",
+            "DPT": r"DPT:2 m above ground:\d+ hour fcst",
+        },
+        "xarray_kwargs": {
+            "backend_kwargs": {
+                "read_keys": ["derivedForecast"],
+            },
+        },
     },
     "gfs": {
         "aliases": ["gfs"],
@@ -54,7 +63,7 @@ VAR_REGISTRY = {
     "TMP": {
         "selector": "TMP:2 m above",
         "aliases": ["2 meter temperature", "t2m", "temperature", "tmp"],
-        "ds_candidates": ["t2m", "tmp2m", "temperature"],
+        "ds_candidates": ["t2m", "tmp2m", "temperature", "t", "2t"],
         "units_hint": "K",
         "title": "2 Meter Temperature",
         "cmap": "coolwarm"
@@ -62,7 +71,7 @@ VAR_REGISTRY = {
     "DPT": {
         "selector": "DPT:2 m above",
         "aliases": ["2 meter dew point", "dewpoint", "dpt"],
-        "ds_candidates": ["d2m", "dpt2m", "dpt", "dewpoint"],
+        "ds_candidates": ["d2m", "dpt2m", "dpt", "dewpoint", "d", "2d"],
         "units_hint": "K",
         "title": "2 Meter Dew Point",
         "cmap": "BrBG"
@@ -87,6 +96,15 @@ def herbie_kwargs_for(model_key: str) -> dict:
     entry = MODEL_REGISTRY[model_key]
     return dict(entry["kwargs"])
 
+def get_xarray_kwargs(model_key: str) -> dict:
+    """Return extra kwargs to pass to Herbie.xarray() for a given model.
+
+    Models with an ``xarray_kwargs`` entry (e.g. HREF) may need extra
+    cfgrib backend_kwargs such as ``read_keys`` to correctly decode
+    ensemble-derived GRIB2 products (PDT 4.2).
+    """
+    return dict(MODEL_REGISTRY[model_key].get("xarray_kwargs", {}))
+
 def get_selector(model_key: str, var_key: str) -> str:
     """Return the Herbie search string for a model+variable pair.
 
@@ -107,6 +125,29 @@ def wrap_longitude(ds):
         if ds["longitude"].ndim == 1:
             ds = ds.sortby("longitude")
     return ds
+
+def ensure_dataset(ds_or_list, var_key=None):
+    """If Herbie returned a list of datasets (multi-hypercube), pick the best.
+
+    When *var_key* is provided we scan the list for a dataset that contains
+    one of the expected variable names (from VAR_REGISTRY ds_candidates).
+    Falls back to the first dataset if no candidate matches.
+    """
+    if not isinstance(ds_or_list, list):
+        return ds_or_list
+    if var_key is not None:
+        candidates = VAR_REGISTRY.get(var_key, {}).get("ds_candidates", [])
+        for ds in ds_or_list:
+            data_vars = list(ds.data_vars)
+            for cand in candidates:
+                if cand in data_vars:
+                    return ds
+            # also try substring match
+            for cand in candidates:
+                for dv in data_vars:
+                    if cand in dv:
+                        return ds
+    return ds_or_list[0]
 
 def normalize_var_key(user_text: str) -> str:
     key = user_text.strip().lower()

@@ -57,13 +57,29 @@ def test_no_duplicate_aliases_across_models():
             seen[a] = model_key
 
 
+@pytest.mark.parametrize("model_key, entry", MODEL_REGISTRY.items())
+def test_xarray_kwargs_shape_when_present(model_key, entry):
+    """If a model has xarray_kwargs, it must be a dict with valid structure."""
+    xr_kw = entry.get("xarray_kwargs")
+    if xr_kw is None:
+        return
+    assert isinstance(xr_kw, dict), f"{model_key} xarray_kwargs must be a dict"
+    if "backend_kwargs" in xr_kw:
+        bk = xr_kw["backend_kwargs"]
+        assert isinstance(bk, dict), f"{model_key} backend_kwargs must be a dict"
+        if "read_keys" in bk:
+            assert isinstance(bk["read_keys"], list), f"{model_key} read_keys must be a list"
+
+
 def test_rap_registry_uses_downloadable_native_grid_product():
     assert MODEL_REGISTRY["rap"]["kwargs"]["product"] == "awp130bgrb"
 
 
-def test_ifs_selector_map_covers_all_variables():
+def test_selector_maps_cover_all_variables():
     from DAG_ModelComparison.comparator.normalize import VAR_REGISTRY
-    entry = MODEL_REGISTRY["ifs"]
-    assert "selector_map" in entry
-    for var_key in VAR_REGISTRY:
-        assert var_key in entry["selector_map"], f"IFS selector_map missing {var_key}"
+    for model_key, entry in MODEL_REGISTRY.items():
+        if "selector_map" in entry:
+            for var_key in VAR_REGISTRY:
+                assert var_key in entry["selector_map"], (
+                    f"{model_key} selector_map missing {var_key}"
+                )

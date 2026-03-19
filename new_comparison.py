@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from tempfile import gettempdir
 
 def main():
-    nwp_model = input("Enter NWP model to compare against RTMA : HRRR, RAP, NBM, ARW, FV3, GFS, IFS: ").strip()
+    nwp_model = input("Enter NWP model to compare against RTMA : HRRR, RAP, NBM, ARW, FV3, GFS, IFS, HREF: ").strip()
 
     date = input("Enter date (YYYY-MM-DD): ").strip()
     init_hour = int(input("Enter a valid initialization hour, in 24-hour Z-time: "))
@@ -59,11 +59,26 @@ def main():
     )
 
     # 4) Load fields
-    ds_nwp = nwp.xarray(selector, remove_grib=True)
+    nwp_xr_kwargs = norm.get_xarray_kwargs(model_key)
+    try:
+        ds_nwp = norm.ensure_dataset(
+            nwp.xarray(selector, remove_grib=True, **nwp_xr_kwargs),
+            var_key=var_key,
+        )
+    except Exception as e:
+        print(f"Failed to load {model_key} GRIB data: {e}")
+        return
     ds_nwp = norm.wrap_longitude(ds_nwp)
 
     rtma_selector = norm.get_selector("rtma", var_key)
-    ds_rtma = rtma.xarray(rtma_selector, remove_grib=True)
+    try:
+        ds_rtma = norm.ensure_dataset(
+            rtma.xarray(rtma_selector, remove_grib=True),
+            var_key=var_key,
+        )
+    except Exception as e:
+        print(f"Failed to load RTMA GRIB data: {e}")
+        return
 
     # Pick correct data variable names from each dataset
     try:
