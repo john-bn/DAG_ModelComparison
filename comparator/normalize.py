@@ -31,6 +31,10 @@ MODEL_REGISTRY = {
     "href": {
         "aliases": ["href"],
         "kwargs": {"model": "href", "product": "mean", "domain": "conus"},
+        "selector_map": {
+            "TMP": r"TMP:2 m above ground:\d+ hour fcst",
+            "DPT": r"DPT:2 m above ground:\d+ hour fcst",
+        },
     },
     "gfs": {
         "aliases": ["gfs"],
@@ -107,6 +111,12 @@ def wrap_longitude(ds):
         if ds["longitude"].ndim == 1:
             ds = ds.sortby("longitude")
     return ds
+
+def ensure_dataset(ds_or_list):
+    """If Herbie returned a list of datasets (multi-hypercube), take the first."""
+    if isinstance(ds_or_list, list):
+        return ds_or_list[0]
+    return ds_or_list
 
 def normalize_var_key(user_text: str) -> str:
     key = user_text.strip().lower()

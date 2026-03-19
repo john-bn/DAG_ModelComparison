@@ -10,6 +10,7 @@ from DAG_ModelComparison.comparator.normalize import (
     pick_data_varname_from_ds,
     get_selector,
     wrap_longitude,
+    ensure_dataset,
 )
 
 
@@ -127,3 +128,32 @@ def test_wrap_longitude_noop_for_negative180():
     ds = xr.Dataset({"longitude": (("x",), [-120.0, -90.0, 0.0, 50.0])})
     result = wrap_longitude(ds)
     assert list(result["longitude"].values) == [-120.0, -90.0, 0.0, 50.0]
+
+
+def test_get_selector_href_uses_precise_regex():
+    sel = get_selector("href", "TMP")
+    assert "hour fcst" in sel
+    assert r"\d+" in sel
+    sel_dpt = get_selector("href", "DPT")
+    assert "hour fcst" in sel_dpt
+
+
+def test_href_selector_matches_forecast_not_max_min():
+    import re
+    sel = get_selector("href", "TMP")
+    # Should match standard forecast entries
+    assert re.search(sel, ":TMP:2 m above ground:6 hour fcst:")
+    # Should NOT match max/min ensemble statistics
+    assert not re.search(sel, ":TMP:2 m above ground:0-6 hour max fcst:")
+    assert not re.search(sel, ":TMP:2 m above ground:0-6 hour min fcst:")
+
+
+def test_ensure_dataset_returns_dataset():
+    ds = xr.Dataset({"t2m": (("x",), [1, 2, 3])})
+    assert ensure_dataset(ds) is ds
+
+
+def test_ensure_dataset_returns_first_from_list():
+    ds1 = xr.Dataset({"t2m": (("x",), [1, 2, 3])})
+    ds2 = xr.Dataset({"t2m": (("x",), [4, 5, 6])})
+    assert ensure_dataset([ds1, ds2]) is ds1

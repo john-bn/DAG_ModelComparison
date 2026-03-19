@@ -59,11 +59,11 @@ def main():
     )
 
     # 4) Load fields
-    ds_nwp = nwp.xarray(selector, remove_grib=True)
+    ds_nwp = norm.ensure_dataset(nwp.xarray(selector, remove_grib=True))
     ds_nwp = norm.wrap_longitude(ds_nwp)
 
     rtma_selector = norm.get_selector("rtma", var_key)
-    ds_rtma = rtma.xarray(rtma_selector, remove_grib=True)
+    ds_rtma = norm.ensure_dataset(rtma.xarray(rtma_selector, remove_grib=True))
 
     # Pick correct data variable names from each dataset
     try:
