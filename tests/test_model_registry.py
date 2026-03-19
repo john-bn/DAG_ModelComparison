@@ -1,6 +1,6 @@
 import pytest
 
-from DAG_ModelComparison.comparator.normalize import (
+from comparator.normalize import (
     MODEL_REGISTRY,
     normalize_model_key,
     herbie_kwargs_for,
@@ -76,7 +76,7 @@ def test_rap_registry_uses_downloadable_native_grid_product():
 
 
 def test_selector_maps_cover_all_variables():
-    from DAG_ModelComparison.comparator.normalize import VAR_REGISTRY
+    from comparator.normalize import VAR_REGISTRY
     for model_key, entry in MODEL_REGISTRY.items():
         if "selector_map" in entry:
             for var_key in VAR_REGISTRY:

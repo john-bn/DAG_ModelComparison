@@ -48,6 +48,10 @@ def main():
         overwrite=True,
         **nwp_kwargs,
     )
+    if not nwp:
+        print(f"Could not find {model_key.upper()} data for {cycle_dt:%Y-%m-%d %H}Z F{forecast:02d}.")
+        print("The file may not be available yet, or may have been removed from the server.")
+        return
 
     rtma_kwargs = norm.herbie_kwargs_for("rtma")
     rtma = Herbie(
@@ -57,6 +61,10 @@ def main():
         overwrite=True,
         **rtma_kwargs,
     )
+    if not rtma:
+        print(f"Could not find RTMA data for {valid_dt:%Y-%m-%d %H}Z.")
+        print("The file may not be available yet, or may have been removed from the server.")
+        return
 
     # 4) Load fields
     nwp_xr_kwargs = norm.get_xarray_kwargs(model_key)

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from DAG_ModelComparison.comparator.plotting import (
+from comparator.plotting import (
     _wrap180,
     _to_2d_lonlat,
     _nearest_values_on_geo_grid,

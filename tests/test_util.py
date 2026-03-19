@@ -1,4 +1,4 @@
-from DAG_ModelComparison.comparator.util import major_airports_df
+from comparator.util import major_airports_df
 
 
 def test_major_airports_df_shape_and_columns():

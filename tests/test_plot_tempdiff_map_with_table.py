@@ -4,7 +4,7 @@ import pytest
 import xarray as xr
 from datetime import datetime
 from matplotlib.collections import QuadMesh
-from DAG_ModelComparison.comparator.plotting import plot_tempdiff_map_with_table
+from comparator.plotting import plot_tempdiff_map_with_table
 
 
 @pytest.mark.mpl_image_compare(remove_text=True)  # optional if you later want image tests
