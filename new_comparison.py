@@ -7,7 +7,11 @@ from comparator import plotting as plot
 from comparator import util
 from comparator import normalize as norm
 from datetime import datetime, timedelta
-from tempfile import gettempdir
+from pathlib import Path
+import os
+
+DATA_DIR = Path("./data")
+DATA_DIR.mkdir(exist_ok=True)
 
 def main():
     nwp_model = input("Enter NWP model to compare against RTMA : HRRR, RAP, NBM, ARW, FV3, GFS, IFS, HREF: ").strip()
@@ -44,7 +48,7 @@ def main():
     nwp = Herbie(
         cycle_dt,
         fxx=forecast,
-        save_dir=gettempdir(),
+        save_dir=str(DATA_DIR),
         overwrite=True,
         **nwp_kwargs,
     )
@@ -57,7 +61,7 @@ def main():
     rtma = Herbie(
         valid_dt,
         fxx=0,
-        save_dir=gettempdir(),
+        save_dir=str(DATA_DIR),
         overwrite=True,
         **rtma_kwargs,
     )
@@ -127,7 +131,17 @@ def main():
     # Add airport markers & labels on the map axis
     plot.plot_airports(ax_map, util.major_airports_df())
 
-    plt.show()
+    # Save plot to figures/ directory
+    out_dir = Path("./figures")
+    out_dir.mkdir(exist_ok=True)
+    filename = f"{display_name}_rtma_{var_key}_{valid_dt:%Y%m%d_%H%MZ}.png"
+    out_path = out_dir / filename
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    print(f"Plot saved to {out_path}")
+
+    # Show interactively if a display is available
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        plt.show()
 
 if __name__ == "__main__":
     main()

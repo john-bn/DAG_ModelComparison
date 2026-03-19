@@ -1,3 +1,8 @@
+import os as _os
+if not _os.environ.get("DISPLAY") and not _os.environ.get("WAYLAND_DISPLAY"):
+    import matplotlib as _mpl
+    _mpl.use("Agg")
+
 from .fielddiff import compute_fielddiff
 from .plotting import plot_tempdiff_map_with_table, plot_airports
 from .util import major_airports_df
