@@ -139,9 +139,12 @@ def main():
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     print(f"Plot saved to {out_path}")
 
-    # Show interactively if a display is available
+    # Show the plot to the user
     if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
         plt.show()
+    elif os.environ.get("CODESPACES") or os.environ.get("TERM_PROGRAM") == "vscode":
+        import subprocess
+        subprocess.Popen(["code", str(out_path)])
 
 if __name__ == "__main__":
     main()
