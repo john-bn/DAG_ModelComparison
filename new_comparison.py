@@ -1,4 +1,9 @@
 # new_comparison.py
+import os
+if os.environ.get("CODESPACES"):
+    import matplotlib
+    matplotlib.use("Agg")  # non-interactive backend — saves memory in Codespaces
+
 from herbie.core import Herbie
 import xesmf as xe
 import matplotlib.pyplot as plt
@@ -9,7 +14,6 @@ from comparator import normalize as norm
 from datetime import datetime, timedelta
 from pathlib import Path
 import gc
-import os
 
 DATA_DIR = Path("./data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -71,7 +75,7 @@ def main():
         print("The file may not be available yet, or may have been removed from the server.")
         return
 
-    # 4) Load fields
+    # 4) Load NWP field — extract only what we need, then free the dataset
     nwp_xr_kwargs = norm.get_xarray_kwargs(model_key)
     try:
         ds_nwp = norm.ensure_dataset(
@@ -83,6 +87,21 @@ def main():
         return
     ds_nwp = norm.wrap_longitude(ds_nwp)
 
+    try:
+        nwp_varname = norm.pick_data_varname_from_ds(ds_nwp, var_key)
+    except ValueError as e:
+        print(e)
+        return
+
+    # Extract lon/lat/data as in-memory arrays, then drop the full dataset
+    nwp_lon = ds_nwp["longitude"].load()
+    nwp_lat = ds_nwp["latitude"].load()
+    nwp_field = ds_nwp[nwp_varname].load()
+    tgt_grid = {"lon": nwp_lon, "lat": nwp_lat}
+    del ds_nwp
+    gc.collect()
+
+    # 5) Load RTMA field — same pattern: extract and free
     rtma_selector = norm.get_selector("rtma", var_key)
     try:
         ds_rtma = norm.ensure_dataset(
@@ -93,29 +112,28 @@ def main():
         print(f"Failed to load RTMA GRIB data: {e}")
         return
 
-    # Pick correct data variable names from each dataset
     try:
-        nwp_varname = norm.pick_data_varname_from_ds(ds_nwp, var_key)
         rtma_varname = norm.pick_data_varname_from_ds(ds_rtma, var_key)
     except ValueError as e:
         print(e)
         return
 
-    # 5) Regrid RTMA to model grid
-    src_grid = {"lon": ds_rtma["longitude"], "lat": ds_rtma["latitude"]}
-    tgt_grid = {"lon": ds_nwp["longitude"], "lat": ds_nwp["latitude"]}
+    rtma_field = ds_rtma[rtma_varname].load()
+    src_grid = {"lon": ds_rtma["longitude"].load(), "lat": ds_rtma["latitude"].load()}
+    del ds_rtma
+    gc.collect()
+
+    # 6) Regrid RTMA to model grid — free regridder immediately after use
     regridder_bilin = xe.Regridder(
         src_grid, tgt_grid, method="bilinear", periodic=False
     )
-    rtma_on_nwp_bilin = regridder_bilin(ds_rtma[rtma_varname])
+    rtma_on_nwp_bilin = regridder_bilin(rtma_field)
+    del regridder_bilin, rtma_field, src_grid, tgt_grid
+    gc.collect()
 
-    # 6) Compute difference in NWP to RTMA fields
-    nwp_lon = ds_nwp["longitude"]
-    nwp_lat = ds_nwp["latitude"]
-    diff = fd.compute_fielddiff(ds_nwp[nwp_varname], rtma_on_nwp_bilin)
-
-    # Free heavy objects to reclaim memory before plotting
-    del ds_nwp, ds_rtma, regridder_bilin, rtma_on_nwp_bilin
+    # 7) Compute difference in NWP to RTMA fields
+    diff = fd.compute_fielddiff(nwp_field, rtma_on_nwp_bilin)
+    del nwp_field, rtma_on_nwp_bilin
     gc.collect()
 
     display_name = model_key
@@ -138,12 +156,17 @@ def main():
     # Add airport markers & labels on the map axis
     plot.plot_airports(ax_map, util.major_airports_df())
 
+    # Free data arrays before rendering — figure already holds a rasterized copy
+    del diff, nwp_lon, nwp_lat
+    gc.collect()
+
     # Save plot to figures/ directory
     out_dir = Path("./figures")
     out_dir.mkdir(exist_ok=True)
     filename = f"{display_name}_rtma_{var_key}_{valid_dt:%Y%m%d_%H%MZ}.png"
     out_path = out_dir / filename
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    save_dpi = 100 if os.environ.get("CODESPACES") else 150
+    fig.savefig(out_path, dpi=save_dpi, bbox_inches="tight")
     print(f"Plot saved to {out_path}")
 
     # Show the plot to the user
