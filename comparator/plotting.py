@@ -64,11 +64,11 @@ def _plot_tempdiff_mesh(
     vmin: float | None = None,
     vmax: float | None = None,
 ):
-    lon_wrapped = _wrap180(np.asarray(lon))
-    T = tempdiff_f.where(np.isfinite(tempdiff_f))
+    lon_wrapped = _wrap180(np.asarray(lon, dtype=np.float32))
+    T = np.asarray(tempdiff_f, dtype=np.float32)
     return ax.pcolormesh(
         lon_wrapped,
-        lat,
+        np.asarray(lat, dtype=np.float32),
         T,
         transform=PC,
         cmap=cmap,
@@ -108,8 +108,8 @@ except Exception:
 
 
 def _as_float_array(a) -> np.ndarray:
-    """Coerce xarray/pandas/np scalars/arrays to float64 ndarray."""
-    return np.asarray(a, dtype=float)
+    """Coerce xarray/pandas/np scalars/arrays to float32 ndarray."""
+    return np.asarray(a, dtype=np.float32)
 
 
 def _to_2d_lonlat(lon_da: xr.DataArray, lat_da: xr.DataArray) -> tuple[np.ndarray, np.ndarray]:
@@ -117,13 +117,13 @@ def _to_2d_lonlat(lon_da: xr.DataArray, lat_da: xr.DataArray) -> tuple[np.ndarra
     Return 2-D lon/lat arrays no matter if inputs are 1-D or 2-D.
     Assumes lon varies across columns (x), lat across rows (y) if 1-D.
     """
-    lon_vals = np.asarray(lon_da.values)
-    lat_vals = np.asarray(lat_da.values)
+    lon_vals = np.asarray(lon_da.values, dtype=np.float32)
+    lat_vals = np.asarray(lat_da.values, dtype=np.float32)
     if lon_vals.ndim == 1 and lat_vals.ndim == 1:
         LON2, LAT2 = np.meshgrid(lon_vals, lat_vals)
     else:
         LON2, LAT2 = lon_vals, lat_vals
-    return _as_float_array(LON2), _as_float_array(LAT2)
+    return LON2, LAT2
 
 
 def _nearest_values_on_geo_grid(
@@ -189,6 +189,9 @@ def plot_tempdiff_map_with_table(
     max_rows: int = 20,
     var_title: str = "2 m Temperature",
     var_cmap: str = "coolwarm",
+    plot_lon: xr.DataArray | None = None,
+    plot_lat: xr.DataArray | None = None,
+    plot_diff: xr.DataArray | None = None,
 ):
     """Draw the CONUS map and add a ΔT table of selected airports."""
     plot_meta = plot_meta or {}
@@ -221,17 +224,25 @@ def plot_tempdiff_map_with_table(
         .reset_index(drop=True)
     )
 
+    # Use coarsened arrays for pcolormesh if provided (saves memory)
+    mesh_lon = plot_lon if plot_lon is not None else lon
+    mesh_lat = plot_lat if plot_lat is not None else lat
+    mesh_diff = plot_diff if plot_diff is not None else tempdiff_f
+
     # --- Layout: map (left) + table (right) ---
-    fig = plt.figure(figsize=(13, 6), constrained_layout=True)
+    import os as _os
+    _in_codespaces = bool(_os.environ.get("CODESPACES"))
+    _figsize = (10, 5) if _in_codespaces else (13, 6)
+    fig = plt.figure(figsize=_figsize, constrained_layout=True)
     gs = GridSpec(1, 2, figure=fig, width_ratios=[3.3, 1.0])
 
-    # Left: map
+    # Left: map (use coarsened data for the mesh)
     ax_map = _init_conus_map(fig, gs[0, 0])
     p = _plot_tempdiff_mesh(
         ax_map,
-        lon,
-        lat,
-        tempdiff_f,
+        mesh_lon,
+        mesh_lat,
+        mesh_diff,
         cmap=cmap,
         norm=norm,
     )

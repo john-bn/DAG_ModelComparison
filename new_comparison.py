@@ -93,12 +93,12 @@ def main():
         print(e)
         return
 
-    # Extract lon/lat/data as in-memory arrays, then drop the full dataset
-    nwp_lon = ds_nwp["longitude"].load()
-    nwp_lat = ds_nwp["latitude"].load()
-    nwp_field = ds_nwp[nwp_varname].load()
+    # Extract lon/lat/data as float32 in-memory arrays, then drop the full dataset
+    nwp_lon = ds_nwp["longitude"].load().astype("float32")
+    nwp_lat = ds_nwp["latitude"].load().astype("float32")
+    nwp_field = ds_nwp[nwp_varname].load().astype("float32")
     tgt_grid = {"lon": nwp_lon, "lat": nwp_lat}
-    del ds_nwp
+    del ds_nwp, nwp
     gc.collect()
 
     # 5) Load RTMA field — same pattern: extract and free
@@ -118,9 +118,10 @@ def main():
         print(e)
         return
 
-    rtma_field = ds_rtma[rtma_varname].load()
-    src_grid = {"lon": ds_rtma["longitude"].load(), "lat": ds_rtma["latitude"].load()}
-    del ds_rtma
+    rtma_field = ds_rtma[rtma_varname].load().astype("float32")
+    src_grid = {"lon": ds_rtma["longitude"].load().astype("float32"),
+                "lat": ds_rtma["latitude"].load().astype("float32")}
+    del ds_rtma, rtma
     gc.collect()
 
     # 6) Regrid RTMA to model grid — free regridder immediately after use
@@ -138,6 +139,25 @@ def main():
 
     display_name = model_key
 
+    # Coarsen grids for plotting — full resolution is invisible at output DPI.
+    # Keep full-res lon/lat/diff for the airport ΔT table (computed inside plot fn),
+    # but pass coarsened versions for the pcolormesh map.
+    import numpy as _np
+    _MAX_PLOT_CELLS = 500_000  # target ceiling for pcolormesh
+    _total = max(nwp_lon.size, 1)
+    _stride = max(1, int(_np.ceil(_np.sqrt(_total / _MAX_PLOT_CELLS))))
+    if _stride > 1 and nwp_lon.ndim >= 1:
+        _s = _stride
+        plot_lon = nwp_lon.values[::_s, ::_s] if nwp_lon.ndim == 2 else nwp_lon.values[::_s]
+        plot_lat = nwp_lat.values[::_s, ::_s] if nwp_lat.ndim == 2 else nwp_lat.values[::_s]
+        plot_diff = diff.values[::_s, ::_s] if diff.ndim == 2 else diff.values[::_s]
+        import xarray as _xr
+        plot_lon = _xr.DataArray(plot_lon)
+        plot_lat = _xr.DataArray(plot_lat)
+        plot_diff = _xr.DataArray(plot_diff)
+    else:
+        plot_lon, plot_lat, plot_diff = nwp_lon, nwp_lat, diff
+
     fig, (ax_map, ax_tbl) = plot.plot_tempdiff_map_with_table(
         nwp_lon,
         nwp_lat,
@@ -148,9 +168,12 @@ def main():
         display_name,
         util.major_airports_df(),
         max_rows=20,
-        var_title=var_title, 
+        var_title=var_title,
         var_cmap=var_cmap,
-        plot_meta=var_meta
+        plot_meta=var_meta,
+        plot_lon=plot_lon,
+        plot_lat=plot_lat,
+        plot_diff=plot_diff,
     )
 
     # Add airport markers & labels on the map axis

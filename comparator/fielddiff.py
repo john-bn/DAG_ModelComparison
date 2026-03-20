@@ -8,4 +8,4 @@ def compute_fielddiff(hrrr_t2m: xr.DataArray, rtma_on_hrrr_t2m) -> xr.DataArray:
     """
     h, r = xr.align(hrrr_t2m, rtma_on_hrrr_t2m, join="exact")
     valid = (np.isfinite(h) & np.isfinite(r) & (h > 150) & (h < 330) & (r > 150) & (r < 330))
-    return (h - r).where(valid) * 9/5
+    return ((h - r).where(valid) * np.float32(9/5)).astype("float32")
