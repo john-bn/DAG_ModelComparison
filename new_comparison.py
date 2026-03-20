@@ -105,7 +105,7 @@ def main():
     src_grid = {"lon": ds_rtma["longitude"], "lat": ds_rtma["latitude"]}
     tgt_grid = {"lon": ds_nwp["longitude"], "lat": ds_nwp["latitude"]}
     regridder_bilin = xe.Regridder(
-        src_grid, tgt_grid, method="bilinear", periodic=False, reuse_weights=True
+        src_grid, tgt_grid, method="bilinear", periodic=False
     )
     rtma_on_nwp_bilin = regridder_bilin(ds_rtma[rtma_varname])
 
