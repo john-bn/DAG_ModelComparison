@@ -1,10 +1,10 @@
 """Memory-efficient chunked regridding via xESMF.
 
-Instead of building one weight matrix for the entire source grid,
-this module splits the source grid into horizontal strips (chunks of
-rows), builds a small regridder for each strip, and combines the
-results.  Peak memory stays proportional to *chunk_size* rather than
-the full grid.
+Splits the *target* grid into horizontal strips, builds a small
+regridder (full source → target strip) for each, and concatenates
+the results.  Peak memory stays proportional to *chunk_rows* rather
+than the full target grid, and there are no extrapolation artefacts
+because each strip only receives the values it actually needs.
 """
 
 import gc
@@ -25,7 +25,7 @@ def regrid_chunked(
     method: str = "bilinear",
     chunk_rows: int = 300,
 ) -> xr.DataArray:
-    """Regrid *src_field* onto *tgt_grid* in row-wise chunks.
+    """Regrid *src_field* onto *tgt_grid* in target-row chunks.
 
     Parameters
     ----------
@@ -38,7 +38,7 @@ def regrid_chunked(
     method : str
         xESMF interpolation method (default ``"bilinear"``).
     chunk_rows : int
-        Number of source-grid rows per chunk.  Lower values use less
+        Number of *target*-grid rows per chunk.  Lower values use less
         memory but require more iterations.  300 is a reasonable
         default for CONUS-scale grids on 4-8 GB machines.
 
@@ -47,70 +47,59 @@ def regrid_chunked(
     xr.DataArray
         The regridded field on *tgt_grid*.
     """
-    src_lon = np.asarray(src_grid["lon"])
-    src_lat = np.asarray(src_grid["lat"])
-    field_vals = np.asarray(src_field)
+    tgt_lon = np.asarray(tgt_grid["lon"])
+    tgt_lat = np.asarray(tgt_grid["lat"])
 
-    # Determine the number of rows in the source grid.
-    if src_lat.ndim == 1:
-        n_rows = src_lat.shape[0]
-    else:
-        n_rows = src_lat.shape[0]
+    # Number of rows in the target grid (first axis for both 1-D and 2-D).
+    n_tgt_rows = tgt_lat.shape[0]
 
-    # If the grid is small enough, just regrid in one shot.
-    if n_rows <= chunk_rows:
+    # If the target grid is small enough, regrid in one shot.
+    if n_tgt_rows <= chunk_rows:
         regridder = xe.Regridder(src_grid, tgt_grid, method=method, periodic=False)
         result = regridder(src_field)
         del regridder
         gc.collect()
         return result
 
-    # --- chunked path ---
-    # We accumulate the regridded result by filling NaN gaps from each
-    # successive chunk.  Each chunk's regridder only produces valid
-    # (non-NaN) values for target points that spatially overlap the
-    # source-chunk strip; the rest are NaN.
-    result = None
+    # --- chunked path: iterate over strips of target rows ---
+    strips: list[np.ndarray] = []
 
-    for start in range(0, n_rows, chunk_rows):
-        end = min(start + chunk_rows, n_rows)
+    for start in range(0, n_tgt_rows, chunk_rows):
+        end = min(start + chunk_rows, n_tgt_rows)
 
-        # Slice source grid and field for this strip of rows.
-        if src_lat.ndim == 1:
-            chunk_lat = src_lat[start:end]
-            chunk_lon = src_lon          # lon is shared across all rows
-            chunk_field = field_vals[start:end, :]
+        # Slice the target grid for this strip of rows.
+        if tgt_lat.ndim == 1:
+            strip_lat = tgt_lat[start:end]
+            strip_lon = tgt_lon            # lon shared across all rows
         else:
-            chunk_lat = src_lat[start:end, :]
-            chunk_lon = src_lon[start:end, :]
-            chunk_field = field_vals[start:end, :]
+            strip_lat = tgt_lat[start:end, :]
+            strip_lon = tgt_lon[start:end, :]
 
-        chunk_src = _grid_dict(chunk_lon, chunk_lat)
-
-        # Wrap the chunk in a DataArray so xESMF handles dims properly.
-        chunk_da = xr.DataArray(
-            chunk_field,
-            dims=src_field.dims if src_field.ndim == 2 else ["y", "x"],
-        )
+        strip_tgt = _grid_dict(strip_lon, strip_lat)
 
         regridder = xe.Regridder(
-            chunk_src, tgt_grid, method=method, periodic=False
+            src_grid, strip_tgt, method=method, periodic=False
         )
-        regridded_chunk = regridder(chunk_da)
+        regridded_strip = regridder(src_field)
 
-        # Free the weight matrix immediately.
-        del regridder, chunk_da, chunk_src, chunk_field
+        # Keep only the numpy values; we will reconstruct coordinates later.
+        strips.append(np.asarray(regridded_strip))
+
+        del regridder, regridded_strip, strip_tgt
         gc.collect()
 
-        # Combine: fill NaN regions of the running result with this
-        # chunk's valid values.  Where chunks overlap at boundaries,
-        # the first chunk's values are kept (overlap is typically only
-        # a pixel or two and values are nearly identical).
-        if result is None:
-            result = regridded_chunk
-        else:
-            result = result.fillna(regridded_chunk)
-            del regridded_chunk
-            gc.collect()
+    # Concatenate strips along the row (y) axis to reconstruct
+    # the full target grid.
+    full_vals = np.concatenate(strips, axis=0)
+    del strips
+    gc.collect()
 
+    # Build the output DataArray with the target grid's coordinates.
+    # Use the same dimension names xESMF would produce.
+    result = xr.DataArray(
+        full_vals,
+        dims=["y", "x"],
+        coords={"lat": (["y", "x"], tgt_lat) if tgt_lat.ndim == 2 else (["y"], tgt_lat),
+                "lon": (["y", "x"], tgt_lon) if tgt_lon.ndim == 2 else (["x"], tgt_lon)},
+    )
     return result
