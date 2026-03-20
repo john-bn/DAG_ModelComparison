@@ -5,12 +5,12 @@ if os.environ.get("CODESPACES"):
     matplotlib.use("Agg")  # non-interactive backend — saves memory in Codespaces
 
 from herbie.core import Herbie
-import xesmf as xe
 import matplotlib.pyplot as plt
 from comparator import fielddiff as fd
 from comparator import plotting as plot
 from comparator import util
 from comparator import normalize as norm
+from comparator.regrid import regrid_chunked
 from datetime import datetime, timedelta
 from pathlib import Path
 import gc
@@ -123,12 +123,11 @@ def main():
     del ds_rtma
     gc.collect()
 
-    # 6) Regrid RTMA to model grid — free regridder immediately after use
-    regridder_bilin = xe.Regridder(
-        src_grid, tgt_grid, method="bilinear", periodic=False
+    # 6) Regrid RTMA to model grid — chunked to limit peak memory
+    rtma_on_nwp_bilin = regrid_chunked(
+        rtma_field, src_grid, tgt_grid, method="bilinear", chunk_rows=300
     )
-    rtma_on_nwp_bilin = regridder_bilin(rtma_field)
-    del regridder_bilin, rtma_field, src_grid, tgt_grid
+    del rtma_field, src_grid, tgt_grid
     gc.collect()
 
     # 7) Compute difference in NWP to RTMA fields
