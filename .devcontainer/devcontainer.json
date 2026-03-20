@@ -2,6 +2,7 @@
   "name": "DAG ModelComparison",
   "image": "mcr.microsoft.com/devcontainers/miniconda:1-3",
   "postCreateCommand": "conda env create -f environment.yml && conda run -n new_comparator pip install -e . && conda run -n new_comparator python -c \"import cartopy.feature as cf; cf.COASTLINE.geometries(); cf.BORDERS.geometries(); cf.STATES.geometries(); print('Cartopy shapefiles cached.')\"",
+  "waitFor": "postCreateCommand",
   "customizations": {
     "vscode": {
       "settings": {
