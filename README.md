@@ -13,10 +13,3 @@ As the data is downloaded from NOMADS & AWS, no special permissions are required
 Data are downloaded automatically via Herbie and cached locally in ./data/.
 For the environemnt, I recommend: conda env create -f environment.yml
 This program is built for Python 3.11 (see `environment.yml`).
-
-A diagram of the file tree is as follows:
-DAG_ModelComparison/
-├── comparator/        # Core comparison logic
-├── plotting/          # Cartopy / Matplotlib figures
-├── util.py/           # Shared helpers
-├── scripts.py/        # Driver script
