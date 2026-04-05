@@ -1,5 +1,6 @@
 # new_comparison.py
 from herbie.core import Herbie
+from Herbie import FastHerbie
 import xesmf as xe
 import matplotlib.pyplot as plt
 from comparator import fielddiff as fd
@@ -14,12 +15,14 @@ DATA_DIR = Path("./data")
 DATA_DIR.mkdir(exist_ok=True)
 
 def main():
-    nwp_model = input("Enter NWP model to compare against RTMA : HRRR, RAP, NBM, ARW, FV3, GFS, IFS, HREF: ").strip()
+    nwp_model = input("Enter NWP model to compare against RTMA : HRRR, NAM5k, NAM12k, RAP, NBM, ARW, FV3, GFS, IFS, HREF: ").strip()
 
     date = input("Enter date (YYYY-MM-DD): ").strip()
     init_hour = int(input("Enter a valid initialization hour, in 24-hour Z-time: "))
     forecast = int(input("Enter a valid forecast hour, in 24-hour Z-time: "))
     anl_var = input("Enter analysis variable (TMP = 2m temperature, DPT = 2m dew point): ").strip()
+    animate = input("Animate the plot? (y/n): ").strip().lower()
+    model_range = None
     var_key = norm.normalize_var_key(anl_var)
     var_meta = norm.VAR_REGISTRY[var_key]
     var_cmap = var_meta["cmap"]
@@ -44,7 +47,7 @@ def main():
         print(e)
         return
 
-    # 3) Build Herbie objects using kwargs registry
+    # 3) Build Herbie objects using kwargs registry for still image
     nwp = Herbie(
         cycle_dt,
         fxx=forecast,
@@ -69,6 +72,20 @@ def main():
         print(f"Could not find RTMA data for {valid_dt:%Y-%m-%d %H}Z.")
         print("The file may not be available yet, or may have been removed from the server.")
         return
+    
+    # 3) Build Herbie objects using kwargs registry for animated gif
+    if animate == "y":
+        nwp_animate = FastHerbie(
+            cycle_dt,
+            fxx=forecast,
+            save_dir=str(DATA_DIR),
+            overwrite=True,
+            **nwp_kwargs,
+        )
+        if not nwp_animate:
+            print(f"Could not find {model_key.upper()} data for {cycle_dt:%Y-%m-%d %H}Z F{forecast:02d}.")
+            print("The file may not be available yet, or may have been removed from the server.")
+            return
 
     # 4) Load fields
     nwp_xr_kwargs = norm.get_xarray_kwargs(model_key)
