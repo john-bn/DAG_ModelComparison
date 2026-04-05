@@ -1,4 +1,5 @@
-### Model & Variable Registries
+### TODO: Add URMA as an option 
+### Big Registries for NWP & RTMA kwargs
 MODEL_REGISTRY = {
     "hrrr": {
         "aliases": ["hrrr"],
@@ -71,7 +72,8 @@ MODEL_REGISTRY = {
         "kwargs": {"model": "rtma", "product": "anl"},
     },
 }
-
+### TODO: Add 2m RH & Vis as variables 
+### Registry for variable kwargs
 VAR_REGISTRY = {
     "TMP": {
         "selector": "TMP:2 m above",
@@ -93,12 +95,10 @@ VAR_REGISTRY = {
 
 ### Normalization of user inputs
 def normalize_model_key(user_text: str) -> str:
-    """Map user input to our registry key."""
+    """Map user input to our model registry key."""
     key = user_text.strip().lower()
-    # Direct hit
     if key in MODEL_REGISTRY:
         return key
-    # Alias hit
     for reg_key, entry in MODEL_REGISTRY.items():
         if key in entry.get("aliases", []):
             return reg_key
@@ -163,6 +163,7 @@ def ensure_dataset(ds_or_list, var_key=None):
     return ds_or_list[0]
 
 def normalize_var_key(user_text: str) -> str:
+    """Map user input to our variable registry key."""
     key = user_text.strip().lower()
     for var_key, entry in VAR_REGISTRY.items():
         if key == var_key.lower() or key in entry["aliases"]:

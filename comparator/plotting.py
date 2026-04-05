@@ -10,7 +10,7 @@ import xarray as xr
 import pandas as pd
 from matplotlib.gridspec import GridSpec
 
-# Fixed CONUS bounds in lon/lat
+# Fixed CONUS bounds in lon/ & fixed coordinate reference system (PlateCarree)
 CONUS_LON_MIN, CONUS_LON_MAX = -125.0, -66.5
 CONUS_LAT_MIN, CONUS_LAT_MAX = 20.0, 50.0
 PC = ccrs.PlateCarree()
@@ -22,8 +22,7 @@ def _wrap180(lon_vals: np.ndarray) -> np.ndarray:
 
 
 def _lock_conus_view(ax: GeoAxes):
-    """
-    Convert CONUS lon/lat corners to the current projection's x/y and lock x/y limits.
+    """Convert CONUS lon/lat corners to the current projection's x/y and lock x/y limits.
     Also disables autoscaling so artists can't change the view.
     """
     proj = ax.projection
@@ -41,6 +40,8 @@ def _lock_conus_view(ax: GeoAxes):
 
 
 def _init_conus_map(fig: Figure, spec=None) -> GeoAxes:
+    """Initalizaes the CONUS Map & adds various mapping features (coastalines, borders, & state boundaries)
+    Used in the plotting function called below"""
     proj = ccrs.LambertConformal(central_longitude=-95, standard_parallels=(33, 45))
     if spec is None:
         ax: GeoAxes = fig.add_subplot(1, 1, 1, projection=proj)  # type: ignore
@@ -64,6 +65,7 @@ def _plot_tempdiff_mesh(
     vmin: float | None = None,
     vmax: float | None = None,
 ):
+    """Plots the actual tempdiff map, calling the tempdiff function"""
     lon_wrapped = _wrap180(np.asarray(lon))
     T = tempdiff_f.where(np.isfinite(tempdiff_f))
     return ax.pcolormesh(
@@ -93,11 +95,6 @@ def plot_airports(ax: GeoAxes, airports: pd.DataFrame):
             path_effects=[pe.withStroke(linewidth=2, foreground="white")]
         )
 
-# ---------------------------------------------------------------------
-# NEW: Robust point sampling on 2-D or 1-D lat/lon grids for airport ΔT table
-# ---------------------------------------------------------------------
-
-# Always define cKDTree so it's not "possibly unbound" for type-checkers
 try:
     from scipy.spatial import cKDTree as _cKDTree  # type: ignore
     cKDTree = _cKDTree  # rebind to a stable name
@@ -113,8 +110,7 @@ def _as_float_array(a) -> np.ndarray:
 
 
 def _to_2d_lonlat(lon_da: xr.DataArray, lat_da: xr.DataArray) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Return 2-D lon/lat arrays no matter if inputs are 1-D or 2-D.
+    """Return 2-D lon/lat arrays no matter if inputs are 1-D or 2-D.
     Assumes lon varies across columns (x), lat across rows (y) if 1-D.
     """
     lon_vals = np.asarray(lon_da.values)
@@ -133,8 +129,7 @@ def _nearest_values_on_geo_grid(
     pts_lon: np.ndarray,
     pts_lat: np.ndarray
 ) -> np.ndarray:
-    """
-    Return nearest-neighbor values from `da` for (pts_lon, pts_lat).
+    """Return nearest-neighbor values from `da` for (pts_lon, pts_lat).
     Works for both 1-D and 2-D lon/lat grids.
     """
     LON2, LAT2 = _to_2d_lonlat(lon_da, lat_da)

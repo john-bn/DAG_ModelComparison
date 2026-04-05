@@ -1,15 +1,16 @@
+### Stub file for building animated GIF
 from PIL import Image
 
 def create_gif(image_paths, output_gif_path, duration=500):
- images = [Image.open(image_path) for image_path in image_paths]
-# Save as GIF
- images[0].save(
- output_gif_path,
- save_all=True,
- append_images=images[1:],
- duration=duration,
- loop=0 # 0 means infinite loop
- )
+    """Attemps to build the GIF File, still a WIP"""
+    images = [Image.open(image_path) for image_path in image_paths]
+    images[0].save(
+    output_gif_path,
+    save_all=True,
+    append_images=images[1:],
+    duration=duration,
+    loop=0 # 0 means infinite loop
+)
 
 if __name__ == "__main__":
  # List of image file paths
