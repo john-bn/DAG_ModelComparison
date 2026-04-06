@@ -9,7 +9,7 @@ from comparator import normalize as norm
 from comparator.build_gif import create_gif
 from datetime import datetime, timedelta
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import os
 
 DATA_DIR = Path("./data")
@@ -20,6 +20,10 @@ FIGURE_DIR.mkdir(exist_ok=True)
 
 # Maximum parallel Herbie download threads (matches FastHerbie default)
 MAX_DOWNLOAD_THREADS = 5
+# Per-file timeout in seconds – if a single GRIB download hasn't finished
+# within this window it is almost certainly stuck (server unreachable,
+# file not yet published, etc.).
+PER_FILE_TIMEOUT = 120
 
 
 # ---------------------------------------------------------------------------
@@ -29,13 +33,21 @@ MAX_DOWNLOAD_THREADS = 5
 def _fetch_herbie(date, fxx, save_dir, **kwargs):
     """Create a Herbie object and download the GRIB file.
 
-    Returns the Herbie object, or None if the file is unavailable.
+    Returns the Herbie object, or None if the file is unavailable or
+    an error occurs during download.
     """
-    h = Herbie(date, fxx=fxx, save_dir=str(save_dir), overwrite=True, **kwargs)
-    if not h:
+    try:
+        h = Herbie(
+            date, fxx=fxx, save_dir=str(save_dir), overwrite=True,
+            verbose=False, **kwargs,
+        )
+        if not h:
+            return None
+        h.download()
+        return h
+    except Exception as exc:
+        # Herbie raises on bad URLs, missing indices, network errors, etc.
         return None
-    h.download()
-    return h
 
 
 def _fetch_nwp(model_key, cycle_dt, fxx, selector, save_dir):
@@ -45,9 +57,12 @@ def _fetch_nwp(model_key, cycle_dt, fxx, selector, save_dir):
     if h is None:
         print(
             f"  [skip] {model_key.upper()} {cycle_dt:%Y-%m-%d %H}Z F{fxx:03d} "
-            f"not available"
+            f"– not available"
         )
         return None
+    print(
+        f"  [done] {model_key.upper()} {cycle_dt:%Y-%m-%d %H}Z F{fxx:03d}"
+    )
     return (cycle_dt, fxx, h)
 
 
@@ -234,12 +249,14 @@ def generate_gif_frames(
     }
 
     # ------------------------------------------------------------------
-    # 2) Download all NWP GRIB files in parallel
+    # 2) Download all NWP GRIB files in parallel (with per-file timeout)
     # ------------------------------------------------------------------
     n = len(runs)
-    print(f"Downloading {n} NWP files in parallel (max {max_threads} threads) ...")
+    print(
+        f"Downloading {n} NWP files in parallel "
+        f"(max {max_threads} threads, {PER_FILE_TIMEOUT}s timeout per file) ..."
+    )
 
-    # Submit downloads
     nwp_results = {}  # (cycle_dt, fxx) → Herbie
     with ThreadPoolExecutor(max_workers=max_threads) as pool:
         future_to_run = {
@@ -248,14 +265,46 @@ def generate_gif_frames(
             ): (cycle_dt, fxx)
             for cycle_dt, fxx in runs
         }
-        for future in as_completed(future_to_run):
-            result = future.result()
-            if result is not None:
-                cyc, fxx, herbie_obj = result
-                nwp_results[(cyc, fxx)] = herbie_obj
+
+        # Drain completed futures with a rolling timeout.
+        # If no future completes within PER_FILE_TIMEOUT seconds we
+        # assume the remaining downloads are stuck and move on.
+        pending = set(future_to_run.keys())
+        while pending:
+            done, pending = wait(
+                pending,
+                timeout=PER_FILE_TIMEOUT,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done:
+                # Nothing finished in the timeout window → stuck
+                timed_out = [
+                    future_to_run[f] for f in pending
+                ]
+                for cyc, fhr in timed_out:
+                    print(
+                        f"  [timeout] {model_key.upper()} "
+                        f"{cyc:%Y-%m-%d %H}Z F{fhr:03d} "
+                        f"– skipping after {PER_FILE_TIMEOUT}s"
+                    )
+                for f in pending:
+                    f.cancel()
+                break
+            for future in done:
+                try:
+                    result = future.result(timeout=0)
+                except Exception:
+                    result = None
+                if result is not None:
+                    cyc, fxx_val, herbie_obj = result
+                    nwp_results[(cyc, fxx_val)] = herbie_obj
 
     downloaded = len(nwp_results)
-    print(f"Downloaded {downloaded}/{n} NWP files successfully.\n")
+    skipped = n - downloaded
+    msg = f"Downloaded {downloaded}/{n} NWP files successfully."
+    if skipped:
+        msg += f"  ({skipped} skipped/timed out)"
+    print(msg + "\n")
 
     if not nwp_results:
         return []

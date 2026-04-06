@@ -43,6 +43,33 @@ class TestFetchHerbie:
         )
         assert result is None
 
+    @patch("new_comparison.Herbie")
+    def test_returns_none_on_herbie_exception(self, MockHerbie, tmp_path):
+        """Network errors, missing indices, etc. should return None, not crash."""
+        from new_comparison import _fetch_herbie
+
+        MockHerbie.side_effect = Exception("server unreachable")
+
+        result = _fetch_herbie(
+            datetime(2026, 4, 6, 12), 6, tmp_path, model="hrrr", product="sfc"
+        )
+        assert result is None
+
+    @patch("new_comparison.Herbie")
+    def test_returns_none_on_download_exception(self, MockHerbie, tmp_path):
+        """If .download() raises, should return None."""
+        from new_comparison import _fetch_herbie
+
+        mock_h = MagicMock()
+        mock_h.__bool__ = lambda self: True
+        mock_h.download.side_effect = Exception("download failed")
+        MockHerbie.return_value = mock_h
+
+        result = _fetch_herbie(
+            datetime(2026, 4, 6, 12), 6, tmp_path, model="hrrr", product="sfc"
+        )
+        assert result is None
+
 
 # ---------------------------------------------------------------------------
 # _fetch_nwp
