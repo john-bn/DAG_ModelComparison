@@ -72,7 +72,76 @@ MODEL_REGISTRY = {
         "kwargs": {"model": "rtma", "product": "anl"},
     },
 }
-### TODO: Add 2m RH & Vis as variables 
+### Forecast-range metadata per model
+# cycle_interval : hours between init cycles (e.g. 1 for hourly, 6 for 4x/day)
+# max_fxx        : longest forecast hour produced by any cycle
+# For models whose extended runs are only on certain cycles, use
+# extended_cycles / base_max_fxx so the shorter runs aren't over-counted.
+MODEL_FORECAST_META = {
+    "hrrr": {
+        "cycle_interval": 1,
+        "max_fxx": 48,
+        "extended_cycles": [0, 6, 12, 18],
+        "base_max_fxx": 18,
+    },
+    "nam5k": {"cycle_interval": 6, "max_fxx": 60},
+    "nam12k": {"cycle_interval": 6, "max_fxx": 84},
+    "rap": {
+        "cycle_interval": 1,
+        "max_fxx": 51,
+        "extended_cycles": [3, 9, 15, 21],
+        "base_max_fxx": 21,
+    },
+    "nbm": {"cycle_interval": 1, "max_fxx": 264},
+    "arw": {"cycle_interval": 12, "max_fxx": 48},
+    "fv3": {"cycle_interval": 12, "max_fxx": 48},
+    "href": {"cycle_interval": 12, "max_fxx": 48},
+    "gfs": {"cycle_interval": 6, "max_fxx": 384},
+    "ifs": {"cycle_interval": 12, "max_fxx": 240},
+}
+
+
+def find_runs_for_valid_time(model_key: str, valid_dt) -> list[tuple]:
+    """Return every (cycle_dt, fxx) pair whose forecast covers *valid_dt*.
+
+    Results are sorted oldest-cycle-first so a GIF shows forecast evolution
+    from long-range down to the shortest lead time.
+    """
+    from datetime import timedelta
+
+    meta = MODEL_FORECAST_META.get(model_key)
+    if meta is None:
+        raise ValueError(
+            f"No forecast metadata for model '{model_key}'. "
+            f"Known models: {', '.join(MODEL_FORECAST_META)}"
+        )
+
+    interval = meta["cycle_interval"]
+    global_max = meta["max_fxx"]
+    extended_cycles = meta.get("extended_cycles")
+    base_max = meta.get("base_max_fxx", global_max)
+
+    results = []
+    for hours_back in range(0, global_max + 1):
+        candidate = valid_dt - timedelta(hours=hours_back)
+        # Only keep cycles that land on a valid init hour
+        if candidate.hour % interval != 0:
+            continue
+        fxx = hours_back
+        # Determine the max forecast hour for this specific cycle
+        if extended_cycles is not None:
+            cycle_max = global_max if candidate.hour in extended_cycles else base_max
+        else:
+            cycle_max = global_max
+        if fxx <= cycle_max:
+            results.append((candidate, fxx))
+
+    # Oldest init first → GIF animates from long-range to short-range
+    results.sort(key=lambda pair: pair[0])
+    return results
+
+
+### TODO: Add 2m RH & Vis as variables
 ### Registry for variable kwargs
 VAR_REGISTRY = {
     "TMP": {
