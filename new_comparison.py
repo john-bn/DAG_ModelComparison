@@ -128,8 +128,12 @@ def generate_comparison_frame(
 
     plot.plot_airports(ax_map, util.major_airports_df())
 
-    # --- Save ---
-    filename = f"{display_name}_rtma_{var_key}_{valid_dt:%Y%m%d_%H%MZ}.png"
+    # --- Save (include init cycle in filename so each frame is unique) ---
+    filename = (
+        f"{display_name}_rtma_{var_key}_"
+        f"init{cycle_dt:%Y%m%d_%H}Z_F{forecast_hour:03d}_"
+        f"valid{valid_dt:%Y%m%d_%H%MZ}.png"
+    )
     out_path = out_dir / filename
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -143,9 +147,6 @@ def main():
         "HRRR, NAM5k, NAM12k, RAP, NBM, ARW, FV3, GFS, IFS, HREF: "
     ).strip()
 
-    date = input("Enter date (YYYY-MM-DD): ").strip()
-    init_hour = int(input("Enter a valid initialization hour, in 24-hour Z-time: "))
-    forecast = int(input("Enter a valid forecast hour, in 24-hour Z-time: "))
     anl_var = input(
         "Enter analysis variable (TMP = 2m temperature, DPT = 2m dew point): "
     ).strip()
@@ -164,29 +165,38 @@ def main():
         print(e)
         return
 
-    cycle_dt = datetime.fromisoformat(f"{date} {init_hour:02d}:00")
-
     if animate == "y":
-        # --- GIF mode: ask for timeframe range ---
-        start_fxx = int(
-            input("Enter the START forecast hour for the GIF timeframe: ")
+        # --- GIF mode: user provides the RTMA analysis time ---
+        analysis_date = input(
+            "Enter the RTMA analysis date (YYYY-MM-DD): "
+        ).strip()
+        analysis_hour = int(
+            input("Enter the RTMA analysis hour, in 24-hour Z-time: ")
         )
-        end_fxx = int(
-            input("Enter the END forecast hour for the GIF timeframe: ")
+        valid_dt = datetime.fromisoformat(
+            f"{analysis_date} {analysis_hour:02d}:00"
         )
-        if start_fxx > end_fxx:
-            print("Start forecast hour must be <= end forecast hour.")
+
+        # Auto-discover every init cycle that covers this valid time
+        runs = norm.find_runs_for_valid_time(model_key, valid_dt)
+        if not runs:
+            print(
+                f"No {model_key.upper()} init cycles found whose forecast "
+                f"range covers {valid_dt:%Y-%m-%d %H}Z."
+            )
             return
 
         print(
-            f"\nGenerating frames for {model_key.upper()} "
-            f"F{start_fxx:02d}–F{end_fxx:02d} "
-            f"(init {cycle_dt:%Y-%m-%d %H}Z) ..."
+            f"\nFound {len(runs)} {model_key.upper()} run(s) covering "
+            f"RTMA analysis {valid_dt:%Y-%m-%d %H}Z:"
         )
+        for cycle, fxx in runs:
+            print(f"  Init {cycle:%Y-%m-%d %H}Z  F{fxx:03d}")
 
+        print(f"\nGenerating {len(runs)} comparison frames ...")
         frame_paths = []
-        for fxx in range(start_fxx, end_fxx + 1):
-            print(f"\n--- Forecast hour {fxx:02d} ---")
+        for cycle_dt, fxx in runs:
+            print(f"\n--- Init {cycle_dt:%Y-%m-%d %H}Z  F{fxx:03d} ---")
             path = generate_comparison_frame(
                 model_key, var_key, cycle_dt, fxx
             )
@@ -198,8 +208,8 @@ def main():
             return
 
         gif_name = (
-            f"{model_key}_rtma_{var_key}_{cycle_dt:%Y%m%d_%H}Z_"
-            f"F{start_fxx:02d}-F{end_fxx:02d}.gif"
+            f"{model_key}_rtma_{var_key}_"
+            f"valid{valid_dt:%Y%m%d_%H}Z_all_runs.gif"
         )
         gif_path = FIGURE_DIR / gif_name
         create_gif(frame_paths, gif_path, duration=500)
@@ -207,6 +217,15 @@ def main():
 
     else:
         # --- Single-frame mode ---
+        date = input("Enter date (YYYY-MM-DD): ").strip()
+        init_hour = int(
+            input("Enter a valid initialization hour, in 24-hour Z-time: ")
+        )
+        forecast = int(
+            input("Enter a valid forecast hour, in 24-hour Z-time: ")
+        )
+        cycle_dt = datetime.fromisoformat(f"{date} {init_hour:02d}:00")
+
         out_path = generate_comparison_frame(
             model_key, var_key, cycle_dt, forecast
         )
