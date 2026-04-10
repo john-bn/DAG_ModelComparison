@@ -19,6 +19,44 @@ FIGURE_DIR = Path("./figures")
 FIGURE_DIR.mkdir(exist_ok=True)
 
 
+def fetch_rtma(var_key, valid_dt, save_dir=DATA_DIR):
+    """Download and decode the RTMA dataset for a given valid time.
+
+    Returns (ds_rtma, rtma_varname) or (None, None) on failure.
+    """
+    rtma_kwargs = norm.herbie_kwargs_for("rtma")
+    rtma = Herbie(
+        valid_dt,
+        fxx=0,
+        save_dir=str(save_dir),
+        overwrite=True,
+        **rtma_kwargs,
+    )
+    if not rtma:
+        print(
+            f"  Could not find RTMA data for {valid_dt:%Y-%m-%d %H}Z."
+        )
+        return None, None
+
+    rtma_selector = norm.get_selector("rtma", var_key)
+    try:
+        ds_rtma = norm.ensure_dataset(
+            rtma.xarray(rtma_selector, remove_grib=True),
+            var_key=var_key,
+        )
+    except Exception as e:
+        print(f"  Failed to load RTMA GRIB data ({valid_dt:%Y-%m-%d %H}Z): {e}")
+        return None, None
+
+    try:
+        rtma_varname = norm.pick_data_varname_from_ds(ds_rtma, var_key)
+    except ValueError as e:
+        print(f"  {e}")
+        return None, None
+
+    return ds_rtma, rtma_varname
+
+
 def generate_comparison_frame(
     model_key,
     var_key,
@@ -26,8 +64,13 @@ def generate_comparison_frame(
     forecast_hour,
     save_dir=DATA_DIR,
     out_dir=FIGURE_DIR,
+    rtma_ds=None,
+    rtma_varname=None,
 ):
     """Generate a single NWP-vs-RTMA comparison plot and return the saved path.
+
+    When *rtma_ds* and *rtma_varname* are supplied the RTMA download is
+    skipped entirely, reusing the pre-loaded dataset.
 
     Returns the Path to the saved PNG, or None if the frame could not be built.
     """
@@ -54,22 +97,7 @@ def generate_comparison_frame(
         )
         return None
 
-    # --- Fetch RTMA data ---
-    rtma_kwargs = norm.herbie_kwargs_for("rtma")
-    rtma = Herbie(
-        valid_dt,
-        fxx=0,
-        save_dir=str(save_dir),
-        overwrite=True,
-        **rtma_kwargs,
-    )
-    if not rtma:
-        print(
-            f"  Could not find RTMA data for {valid_dt:%Y-%m-%d %H}Z. Skipping."
-        )
-        return None
-
-    # --- Load fields ---
+    # --- Load NWP fields ---
     nwp_xr_kwargs = norm.get_xarray_kwargs(model_key)
     try:
         ds_nwp = norm.ensure_dataset(
@@ -81,20 +109,17 @@ def generate_comparison_frame(
         return None
     ds_nwp = norm.wrap_longitude(ds_nwp)
 
-    rtma_selector = norm.get_selector("rtma", var_key)
-    try:
-        ds_rtma = norm.ensure_dataset(
-            rtma.xarray(rtma_selector, remove_grib=True),
-            var_key=var_key,
-        )
-    except Exception as e:
-        print(f"  Failed to load RTMA GRIB data ({valid_dt:%Y-%m-%d %H}Z): {e}")
-        return None
+    # --- RTMA: reuse pre-loaded dataset or fetch on demand ---
+    if rtma_ds is not None and rtma_varname is not None:
+        ds_rtma = rtma_ds
+    else:
+        ds_rtma, rtma_varname = fetch_rtma(var_key, valid_dt, save_dir)
+        if ds_rtma is None:
+            return None
 
-    # --- Variable name resolution ---
+    # --- NWP variable name resolution ---
     try:
         nwp_varname = norm.pick_data_varname_from_ds(ds_nwp, var_key)
-        rtma_varname = norm.pick_data_varname_from_ds(ds_rtma, var_key)
     except ValueError as e:
         print(f"  {e}")
         return None
@@ -194,9 +219,16 @@ def main():
         for cycle, fxx in runs:
             print(f"  Init {cycle:%Y-%m-%d %H}Z  F{fxx:03d}")
 
+        # Pre-fetch RTMA once — every frame shares the same valid time
+        print(f"\nDownloading RTMA analysis for {valid_dt:%Y-%m-%d %H}Z ...")
+        rtma_ds, rtma_varname = fetch_rtma(var_key, valid_dt)
+        if rtma_ds is None:
+            print("RTMA download failed. Cannot generate frames.")
+            return
+
         max_workers = min(os.cpu_count() or 4, len(runs), 8)
         print(
-            f"\nGenerating {len(runs)} comparison frames "
+            f"Generating {len(runs)} comparison frames "
             f"using {max_workers} parallel workers ..."
         )
 
@@ -210,6 +242,8 @@ def main():
                     var_key,
                     cycle_dt,
                     fxx,
+                    rtma_ds=rtma_ds,
+                    rtma_varname=rtma_varname,
                 )
                 future_to_run[future] = (cycle_dt, fxx)
 
