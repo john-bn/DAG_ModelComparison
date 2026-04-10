@@ -9,6 +9,7 @@ from comparator import normalize as norm
 from comparator.build_gif import create_gif
 from datetime import datetime, timedelta
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import os
 
 DATA_DIR = Path("./data")
@@ -193,15 +194,46 @@ def main():
         for cycle, fxx in runs:
             print(f"  Init {cycle:%Y-%m-%d %H}Z  F{fxx:03d}")
 
-        print(f"\nGenerating {len(runs)} comparison frames ...")
-        frame_paths = []
-        for cycle_dt, fxx in runs:
-            print(f"\n--- Init {cycle_dt:%Y-%m-%d %H}Z  F{fxx:03d} ---")
-            path = generate_comparison_frame(
-                model_key, var_key, cycle_dt, fxx
-            )
-            if path is not None:
-                frame_paths.append(path)
+        max_workers = min(os.cpu_count() or 4, len(runs), 8)
+        print(
+            f"\nGenerating {len(runs)} comparison frames "
+            f"using {max_workers} parallel workers ..."
+        )
+
+        frame_results = {}  # cycle_dt -> path
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_to_run = {}
+            for cycle_dt, fxx in runs:
+                future = executor.submit(
+                    generate_comparison_frame,
+                    model_key,
+                    var_key,
+                    cycle_dt,
+                    fxx,
+                )
+                future_to_run[future] = (cycle_dt, fxx)
+
+            for future in as_completed(future_to_run):
+                cycle_dt, fxx = future_to_run[future]
+                try:
+                    path = future.result()
+                    if path is not None:
+                        frame_results[cycle_dt] = path
+                    else:
+                        print(
+                            f"  Skipped: Init {cycle_dt:%Y-%m-%d %H}Z "
+                            f"F{fxx:03d}"
+                        )
+                except Exception as e:
+                    print(
+                        f"  Failed:  Init {cycle_dt:%Y-%m-%d %H}Z "
+                        f"F{fxx:03d}: {e}"
+                    )
+
+        # Preserve chronological order (oldest init first) for the GIF
+        frame_paths = [
+            frame_results[dt] for dt, _ in runs if dt in frame_results
+        ]
 
         if not frame_paths:
             print("No frames were generated. Cannot create GIF.")
