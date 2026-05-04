@@ -192,6 +192,7 @@ def plot_tempdiff_map_with_table(
     vmin = plot_meta.get("vmin", -15)
     vmax = plot_meta.get("vmax", 15)
     vcenter = plot_meta.get("vcenter", 0.0)
+    diff_label = plot_meta.get("diff_label", "ΔT (°F)")
     norm = TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
 
     # --- Compute ΔT at airport locations (robust for 2-D or 1-D lon/lat grids) ---
@@ -207,9 +208,9 @@ def plot_tempdiff_map_with_table(
     # Build table in alphabetical order
     table_df = pd.DataFrame({
         "ICAO": airports_df["icao"].astype(str),
-        "ΔT (°F)": deltas,
+        diff_label: deltas,
     })
-    table_df["ΔT (°F)"] = pd.to_numeric(table_df["ΔT (°F)"], errors="coerce").round(1)
+    table_df[diff_label] = pd.to_numeric(table_df[diff_label], errors="coerce").round(1)
     table_df = (
         table_df.sort_values("ICAO", ascending=True, kind="mergesort")
         .head(max_rows)
@@ -237,7 +238,7 @@ def plot_tempdiff_map_with_table(
         orientation="horizontal",
         pad=0.02,
         shrink=0.8,
-        label="ΔT (°F)",
+        label=diff_label,
     )
     ax_map.set_title(
         f"{model_name.upper()} − RTMA: {title}\n"
@@ -267,7 +268,7 @@ def plot_tempdiff_map_with_table(
 
     # Optional: tint ΔT column cells by sign (add small ignore to hush Pylance)
     try:
-        col_idx = table_df.columns.get_loc("ΔT (°F)")
+        col_idx = table_df.columns.get_loc(diff_label)
         for i in range(len(table_df)):
             val = table_df.iloc[i, col_idx]
             try:

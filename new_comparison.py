@@ -108,7 +108,7 @@ def generate_comparison_frame(
     rtma_on_nwp = regridder(ds_rtma[rtma_varname])
 
     # --- Compute difference ---
-    diff = fd.compute_fielddiff(ds_nwp[nwp_varname], rtma_on_nwp)
+    diff = fd.compute_fielddiff(ds_nwp[nwp_varname], rtma_on_nwp, var_key)
 
     display_name = model_key
 
@@ -149,7 +149,7 @@ def main():
     ).strip()
 
     anl_var = input(
-        "Enter analysis variable (TMP = 2m temperature, DPT = 2m dew point): "
+        "Enter analysis variable (TMP = 2m temperature, DPT = 2m dew point, VIS = visibility): "
     ).strip()
     animate = input("Animate the plot? (y/n): ").strip().lower()
 

@@ -44,6 +44,26 @@ def test_compute_fielddiff_requires_exact_alignment():
         compute_fielddiff(h, r)
 
 
+def test_compute_visdiff_basic_math_and_units():
+    # 1609.344 m difference -> 1.0 SM
+    h = _da([[1609.344, 0.0]], name="vis")
+    r = _da([[0.0, 0.0]], name="vis")
+    out = compute_fielddiff(h, r, var_key="VIS")
+
+    assert np.isfinite(out.values).all()
+    assert out.values[0, 0] == pytest.approx(1.0)
+    assert out.values[0, 1] == pytest.approx(0.0)
+
+
+def test_compute_visdiff_masks_out_of_range():
+    # negative, above 24000 m, and NaN should all be masked
+    h = _da([[np.nan, -1.0, 25000.0, 10000.0]], name="vis")
+    r = _da([[5000.0, 5000.0, 5000.0, np.nan]], name="vis")
+
+    out = compute_fielddiff(h, r, var_key="VIS")
+    assert np.isnan(out.values).all()
+
+
 def test_compute_fielddiff_preserves_coords_and_dims():
     h = xr.DataArray(
         [[300.0, 301.0], [302.0, 303.0]],

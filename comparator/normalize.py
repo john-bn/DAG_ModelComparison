@@ -141,7 +141,7 @@ def find_runs_for_valid_time(model_key: str, valid_dt) -> list[tuple]:
     return results
 
 
-### TODO: Add 2m RH & Vis as variables
+### TODO: Add 2m RH as a variable
 ### Registry for variable kwargs
 VAR_REGISTRY = {
     "TMP": {
@@ -150,7 +150,9 @@ VAR_REGISTRY = {
         "ds_candidates": ["t2m", "tmp2m", "temperature", "t", "2t"],
         "units_hint": "K",
         "title": "2 Meter Temperature",
-        "cmap": "coolwarm"
+        "cmap": "coolwarm",
+        "vmin": -15.0, "vcenter": 0.0, "vmax": 15.0,
+        "diff_label": "ΔT (°F)",
     },
     "DPT": {
         "selector": "DPT:2 m above",
@@ -158,8 +160,20 @@ VAR_REGISTRY = {
         "ds_candidates": ["d2m", "dpt2m", "dpt", "dewpoint", "d", "2d"],
         "units_hint": "K",
         "title": "2 Meter Dew Point",
-        "cmap": "BrBG"
-    }
+        "cmap": "BrBG",
+        "vmin": -15.0, "vcenter": 0.0, "vmax": 15.0,
+        "diff_label": "ΔDpt (°F)",
+    },
+    "VIS": {
+        "selector": "VIS:surface",
+        "aliases": ["visibility", "vis", "surface visibility"],
+        "ds_candidates": ["vis", "visibility", "VIS", "vis_surface"],
+        "units_hint": "m",
+        "title": "Visibility",
+        "cmap": "RdBu_r",
+        "vmin": -5.0, "vcenter": 0.0, "vmax": 5.0,
+        "diff_label": "ΔVis (SM)",
+    },
 }
 
 ### Normalization of user inputs
