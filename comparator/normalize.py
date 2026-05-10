@@ -1,4 +1,4 @@
-### TODO: Add URMA as an option 
+### TODO: Add URMA as an option
 ### Big Registries for NWP & RTMA kwargs
 MODEL_REGISTRY = {
     "hrrr": {
@@ -140,8 +140,6 @@ def find_runs_for_valid_time(model_key: str, valid_dt) -> list[tuple]:
     results.sort(key=lambda pair: pair[0])
     return results
 
-
-### TODO: Add 2m RH as a variable
 ### Registry for variable kwargs
 VAR_REGISTRY = {
     "TMP": {

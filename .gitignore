@@ -37,3 +37,6 @@ output/
 
 # Logs
 *.log
+
+# TODO
+*.txt
