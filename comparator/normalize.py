@@ -1,4 +1,5 @@
-### TODO: Add URMA as an option 
+import xarray as xr
+
 ### Big Registries for NWP & RTMA kwargs
 MODEL_REGISTRY = {
     "hrrr": {
@@ -35,6 +36,9 @@ MODEL_REGISTRY = {
         "selector_map": {
             "TMP": r"TMP:2 m above ground:\d+ hour fcst",
             "DPT": r"DPT:2 m above ground:\d+ hour fcst",
+            "VIS": r"VIS:surface:\d+ hour fcst",
+            "WSP": r"(?:U|V)GRD:10 m above ground:\d+ hour fcst",
+            "GUST": r"GUST:surface:\d+ hour fcst",
         },
         "xarray_kwargs": {
             "backend_kwargs": {
@@ -65,13 +69,37 @@ MODEL_REGISTRY = {
         "selector_map": {
             "TMP": ":2t:",
             "DPT": ":2d:",
+            "VIS": ":vis:",
+            "WSP": ":(?:10u|10v):",
+            "GUST": ":(?:i10fg|10fg):",
         },
     },
     "rtma": {
         "aliases": ["rtma"],
         "kwargs": {"model": "rtma", "product": "anl"},
     },
+    "urma": {
+        "aliases": ["urma"],
+        "kwargs": {"model": "urma", "product": "anl"},
+    },
 }
+
+### Verification (analysis) sources the user may select as ground truth.
+VERIF_SOURCES = ("rtma", "urma")
+
+
+def normalize_verif_key(user_text: str) -> str:
+    """Map user input to a supported verification source key."""
+    key = user_text.strip().lower()
+    if key in VERIF_SOURCES:
+        return key
+    for src in VERIF_SOURCES:
+        if key in MODEL_REGISTRY[src].get("aliases", []):
+            return src
+    raise ValueError(
+        f"Invalid verification source: {user_text}. "
+        f"Choose one of: {', '.join(s.upper() for s in VERIF_SOURCES)}"
+    )
 ### Forecast-range metadata per model
 # cycle_interval : hours between init cycles (e.g. 1 for hourly, 6 for 4x/day)
 # max_fxx        : longest forecast hour produced by any cycle
@@ -140,8 +168,6 @@ def find_runs_for_valid_time(model_key: str, valid_dt) -> list[tuple]:
     results.sort(key=lambda pair: pair[0])
     return results
 
-
-### TODO: Add 2m RH as a variable
 ### Registry for variable kwargs
 VAR_REGISTRY = {
     "TMP": {
@@ -173,6 +199,28 @@ VAR_REGISTRY = {
         "cmap": "RdBu_r",
         "vmin": -5.0, "vcenter": 0.0, "vmax": 5.0,
         "diff_label": "ΔVis (SM)",
+    },
+    "WSP": {
+        "selector": r"(?:U|V)GRD:10 m above",
+        "aliases": ["wind speed", "wsp", "wind", "10m wind"],
+        "ds_candidates": ["u10", "v10", "10u", "10v", "u_component_of_wind", "v_component_of_wind"],
+        "components": ("u", "v"),
+        "derive": "wind_magnitude",
+        "units_hint": "m s**-1",
+        "title": "10 m Wind Speed",
+        "cmap": "RdBu_r",
+        "vmin": -10.0, "vcenter": 0.0, "vmax": 10.0,
+        "diff_label": "ΔWSP (mph)",
+    },
+    "GUST": {
+        "selector": "GUST:surface",
+        "aliases": ["gust", "wind gust", "surface gust", "wind_gust"],
+        "ds_candidates": ["gust", "i10fg", "fg10"],
+        "units_hint": "m s**-1",
+        "title": "Surface Wind Gust",
+        "cmap": "RdBu_r",
+        "vmin": -15.0, "vcenter": 0.0, "vmax": 15.0,
+        "diff_label": "ΔGust (mph)",
     },
 }
 
@@ -222,27 +270,46 @@ def wrap_longitude(ds):
             ds = ds.sortby("longitude")
     return ds
 
+def _dataset_matches_candidates(ds, candidates) -> bool:
+    """True if *ds* contains a data_var matching any candidate (exact or substring)."""
+    data_vars = list(ds.data_vars)
+    if any(cand in data_vars for cand in candidates):
+        return True
+    return any(cand in dv for cand in candidates for dv in data_vars)
+
+
 def ensure_dataset(ds_or_list, var_key=None):
     """If Herbie returned a list of datasets (multi-hypercube), pick the best.
 
     When *var_key* is provided we scan the list for a dataset that contains
     one of the expected variable names (from VAR_REGISTRY ds_candidates).
     Falls back to the first dataset if no candidate matches.
+
+    Derived vars (e.g. WSP wind magnitude) need MULTIPLE component fields, which
+    Herbie may split across separate datasets (u in one, v in another). For those
+    we merge every matching dataset so extract_scalar_field sees all components.
     """
     if not isinstance(ds_or_list, list):
         return ds_or_list
     if var_key is not None:
-        candidates = VAR_REGISTRY.get(var_key, {}).get("ds_candidates", [])
+        meta = VAR_REGISTRY.get(var_key, {})
+        candidates = meta.get("ds_candidates", [])
+
+        if meta.get("derive"):
+            matching = [ds for ds in ds_or_list
+                        if _dataset_matches_candidates(ds, candidates)]
+            if len(matching) > 1:
+                try:
+                    return xr.merge(matching, compat="override",
+                                    combine_attrs="override")
+                except Exception:
+                    pass  # fall through to single-dataset selection below
+            if matching:
+                return matching[0]
+
         for ds in ds_or_list:
-            data_vars = list(ds.data_vars)
-            for cand in candidates:
-                if cand in data_vars:
-                    return ds
-            # also try substring match
-            for cand in candidates:
-                for dv in data_vars:
-                    if cand in dv:
-                        return ds
+            if _dataset_matches_candidates(ds, candidates):
+                return ds
     return ds_or_list[0]
 
 def normalize_var_key(user_text: str) -> str:
@@ -254,6 +321,52 @@ def normalize_var_key(user_text: str) -> str:
     raise ValueError(f"Invalid analysis variable: {user_text}")
 
 ### Select variable from xarray.Dataset using VAR_REGISTRY
+def _pick_first_matching(ds, candidates):
+    """Return the first data_var name in *ds* matching any candidate.
+
+    Tries exact match first, then substring match. Single-character candidates
+    (e.g. "u"/"v") are only matched exactly — substring-matching them would
+    wrongly latch onto unrelated names like "gust" or "humidity".
+    """
+    data_vars = list(ds.data_vars)
+    for cand in candidates:
+        if cand in data_vars:
+            return cand
+    for cand in candidates:
+        if len(cand) <= 1:
+            continue
+        for dv in data_vars:
+            if cand in dv:
+                return dv
+    return None
+
+
+def extract_scalar_field(ds, var_key: str):
+    """Return a single 2-D scalar field for *var_key*.
+
+    For ordinary vars this is just ds[<resolved_varname>]. For derived
+    vars (currently only WSP via 'wind_magnitude') this combines two
+    components — sqrt(u**2 + v**2) — into one DataArray in the same
+    units as the inputs.
+    """
+    meta = VAR_REGISTRY[var_key]
+    derive = meta.get("derive")
+    if derive is None:
+        return ds[pick_data_varname_from_ds(ds, var_key)]
+
+    if derive == "wind_magnitude":
+        u_name = _pick_first_matching(ds, ["u10", "10u", "u_component_of_wind", "u"])
+        v_name = _pick_first_matching(ds, ["v10", "10v", "v_component_of_wind", "v"])
+        if u_name is None or v_name is None:
+            raise ValueError(
+                f"Could not find U/V wind components for {var_key}. "
+                f"Dataset contains data_vars={list(ds.data_vars)}"
+            )
+        return (ds[u_name] ** 2 + ds[v_name] ** 2) ** 0.5
+
+    raise ValueError(f"Unknown derive recipe for {var_key}: {derive}")
+
+
 def pick_data_varname_from_ds(ds, var_key: str) -> str:
     """
     Pick the right data variable from a Herbie-returned xarray.Dataset.

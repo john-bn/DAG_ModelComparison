@@ -8,6 +8,7 @@ from comparator.normalize import (
     herbie_kwargs_for,
     normalize_var_key,
     pick_data_varname_from_ds,
+    extract_scalar_field,
     get_selector,
     get_xarray_kwargs,
     wrap_longitude,
@@ -50,8 +51,83 @@ def test_normalize_var_key_direct_or_alias():
 
 def test_normalize_var_key_invalid_raises():
     with pytest.raises(ValueError) as e:
-        normalize_var_key("wind_speed")
+        normalize_var_key("not_a_variable")
     assert "Invalid analysis variable" in str(e.value)
+
+
+def test_normalize_var_key_wsp_aliases():
+    assert normalize_var_key("WSP") == "WSP"
+    assert normalize_var_key("wsp") == "WSP"
+    assert normalize_var_key("wind speed") == "WSP"
+    assert normalize_var_key("wind") == "WSP"
+
+
+def test_normalize_var_key_gust_aliases():
+    assert normalize_var_key("GUST") == "GUST"
+    assert normalize_var_key("gust") == "GUST"
+    assert normalize_var_key("wind gust") == "GUST"
+    assert normalize_var_key("wind_gust") == "GUST"
+
+
+def test_get_selector_wsp_combined_regex_matches_u_and_v():
+    import re
+    sel = get_selector("hrrr", "WSP")
+    assert re.search(sel, "UGRD:10 m above ground:anl")
+    assert re.search(sel, "VGRD:10 m above ground:anl")
+
+
+def test_get_selector_gust_basic():
+    assert get_selector("hrrr", "GUST") == "GUST:surface"
+
+
+def test_get_selector_href_wsp_uses_forecast_regex():
+    import re
+    sel = get_selector("href", "WSP")
+    assert re.search(sel, ":UGRD:10 m above ground:6 hour fcst:")
+    assert re.search(sel, ":VGRD:10 m above ground:12 hour fcst:")
+
+
+def test_extract_scalar_field_wsp_computes_magnitude():
+    ds = xr.Dataset(
+        {
+            "u10": (("y", "x"), [[3.0, 0.0]]),
+            "v10": (("y", "x"), [[4.0, 0.0]]),
+        }
+    )
+    out = extract_scalar_field(ds, "WSP")
+    # sqrt(3^2 + 4^2) = 5
+    assert float(out.values[0, 0]) == pytest.approx(5.0)
+    assert float(out.values[0, 1]) == pytest.approx(0.0)
+
+
+def test_extract_scalar_field_gust_picks_single_field():
+    ds = xr.Dataset({"gust": (("y", "x"), [[12.5]])})
+    out = extract_scalar_field(ds, "GUST")
+    assert float(out.values[0, 0]) == pytest.approx(12.5)
+
+
+def test_extract_scalar_field_tmp_returns_single_var():
+    ds = xr.Dataset({"t2m": (("y", "x"), [[295.0]])})
+    out = extract_scalar_field(ds, "TMP")
+    assert float(out.values[0, 0]) == pytest.approx(295.0)
+
+
+def test_ensure_dataset_merges_split_wind_components():
+    # Herbie can return U and V as SEPARATE datasets; ensure_dataset must merge
+    # them so extract_scalar_field sees both components (regression for #2).
+    ds_u = xr.Dataset({"u10": (("y", "x"), [[3.0]])})
+    ds_v = xr.Dataset({"v10": (("y", "x"), [[4.0]])})
+    merged = ensure_dataset([ds_u, ds_v], var_key="WSP")
+    assert "u10" in merged.data_vars and "v10" in merged.data_vars
+    out = extract_scalar_field(merged, "WSP")
+    assert float(out.values[0, 0]) == pytest.approx(5.0)
+
+
+def test_extract_scalar_field_wsp_does_not_match_gust_as_component():
+    # A bare "u"/"v" must not substring-match unrelated vars like "gust" (#3).
+    ds = xr.Dataset({"gust": (("y", "x"), [[12.5]])})
+    with pytest.raises(ValueError, match="Could not find U/V wind components"):
+        extract_scalar_field(ds, "WSP")
 
 
 def test_pick_data_varname_single_data_var():

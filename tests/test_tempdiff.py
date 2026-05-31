@@ -64,6 +64,36 @@ def test_compute_visdiff_masks_out_of_range():
     assert np.isnan(out.values).all()
 
 
+def test_compute_wsp_diff_basic_math_and_units():
+    # 10 m/s - 5 m/s = 5 m/s -> 5 / 0.44704 mph
+    h = _da([[10.0, 5.0]], name="wsp")
+    r = _da([[5.0, 5.0]], name="wsp")
+    out = compute_fielddiff(h, r, var_key="WSP")
+
+    assert np.isfinite(out.values).all()
+    assert out.values[0, 0] == pytest.approx(5.0 / 0.44704)
+    assert out.values[0, 1] == pytest.approx(0.0)
+
+
+def test_compute_gust_diff_basic_math_and_units():
+    h = _da([[20.0, 8.0]], name="gust")
+    r = _da([[10.0, 8.0]], name="gust")
+    out = compute_fielddiff(h, r, var_key="GUST")
+
+    assert np.isfinite(out.values).all()
+    assert out.values[0, 0] == pytest.approx(10.0 / 0.44704)
+    assert out.values[0, 1] == pytest.approx(0.0)
+
+
+def test_compute_wsp_diff_masks_out_of_range():
+    # negative speed, above 120 m/s, and NaN should all be masked
+    h = _da([[np.nan, -1.0, 200.0, 10.0]], name="wsp")
+    r = _da([[5.0, 5.0, 5.0, np.nan]], name="wsp")
+
+    out = compute_fielddiff(h, r, var_key="WSP")
+    assert np.isnan(out.values).all()
+
+
 def test_compute_fielddiff_preserves_coords_and_dims():
     h = xr.DataArray(
         [[300.0, 301.0], [302.0, 303.0]],
