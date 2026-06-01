@@ -1,5 +1,4 @@
-### TODO: Add URMA as an option
-### Big Registries for NWP & RTMA kwargs
+### Big Registries for NWP & analysis (RTMA/URMA) kwargs
 MODEL_REGISTRY = {
     "hrrr": {
         "aliases": ["hrrr"],
@@ -71,7 +70,16 @@ MODEL_REGISTRY = {
         "aliases": ["rtma"],
         "kwargs": {"model": "rtma", "product": "anl"},
     },
+    "urma": {
+        "aliases": ["urma"],
+        "kwargs": {"model": "urma", "product": "anl"},
+    },
 }
+
+### Analysis sources usable as a verification field for the NWP forecast.
+# URMA shares RTMA's 2.5 km CONUS grid and GRIB messages, so both reuse the
+# VAR_REGISTRY selectors via get_selector().
+VERIFICATION_SOURCES = ("rtma", "urma")
 ### Forecast-range metadata per model
 # cycle_interval : hours between init cycles (e.g. 1 for hourly, 6 for 4x/day)
 # max_fxx        : longest forecast hour produced by any cycle
@@ -184,6 +192,16 @@ def normalize_model_key(user_text: str) -> str:
         if key in entry.get("aliases", []):
             return reg_key
     raise ValueError(f"Invalid NWP model selected: {user_text}")
+
+def normalize_verif_key(user_text: str) -> str:
+    """Map user input to a verification analysis key (rtma or urma)."""
+    key = user_text.strip().lower()
+    if key in VERIFICATION_SOURCES:
+        return key
+    raise ValueError(
+        f"Invalid verification source: {user_text!r}. "
+        f"Choose one of: {', '.join(s.upper() for s in VERIFICATION_SOURCES)}"
+    )
 
 def herbie_kwargs_for(model_key: str) -> dict:
     """Return kwargs for Herbie(...)"""

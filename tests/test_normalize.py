@@ -4,7 +4,9 @@ import xarray as xr
 from comparator.normalize import (
     MODEL_REGISTRY,
     VAR_REGISTRY,
+    VERIFICATION_SOURCES,
     normalize_model_key,
+    normalize_verif_key,
     herbie_kwargs_for,
     normalize_var_key,
     pick_data_varname_from_ds,
@@ -39,6 +41,28 @@ def test_herbie_kwargs_for_returns_copy_not_reference():
     kw["model"] = "mutated"
     # Ensure registry is unchanged (we returned a new dict)
     assert MODEL_REGISTRY["hrrr"]["kwargs"]["model"] == "hrrr"
+
+
+def test_verification_sources_registered_in_model_registry():
+    # Both analysis sources must have registry entries so herbie_kwargs_for /
+    # get_selector can resolve them.
+    for src in VERIFICATION_SOURCES:
+        assert src in MODEL_REGISTRY
+        assert MODEL_REGISTRY[src]["kwargs"]["product"] == "anl"
+
+
+def test_normalize_verif_key_accepts_rtma_and_urma():
+    assert normalize_verif_key("rtma") == "rtma"
+    assert normalize_verif_key(" RTMA ") == "rtma"
+    assert normalize_verif_key("urma") == "urma"
+    assert normalize_verif_key("URMA") == "urma"
+
+
+def test_normalize_verif_key_rejects_non_analysis_source():
+    for bad in ("gfs", "hrrr", "", "rtmaa"):
+        with pytest.raises(ValueError) as e:
+            normalize_verif_key(bad)
+        assert "Invalid verification source" in str(e.value)
 
 
 def test_normalize_var_key_direct_or_alias():

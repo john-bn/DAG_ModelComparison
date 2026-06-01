@@ -24,13 +24,16 @@ def generate_comparison_frame(
     var_key,
     cycle_dt,
     forecast_hour,
+    verif_key="rtma",
     save_dir=DATA_DIR,
     out_dir=FIGURE_DIR,
 ):
-    """Generate a single NWP-vs-RTMA comparison plot and return the saved path.
+    """Generate a single NWP-vs-analysis comparison plot and return the saved path.
 
+    *verif_key* is the verification analysis source ("rtma" or "urma").
     Returns the Path to the saved PNG, or None if the frame could not be built.
     """
+    verif_label = verif_key.upper()
     var_meta = norm.VAR_REGISTRY[var_key]
     var_cmap = var_meta["cmap"]
     var_title = var_meta["title"]
@@ -54,18 +57,18 @@ def generate_comparison_frame(
         )
         return None
 
-    # --- Fetch RTMA data ---
-    rtma_kwargs = norm.herbie_kwargs_for("rtma")
-    rtma = Herbie(
+    # --- Fetch analysis (RTMA/URMA) data ---
+    anl_kwargs = norm.herbie_kwargs_for(verif_key)
+    anl = Herbie(
         valid_dt,
         fxx=0,
         save_dir=str(save_dir),
         overwrite=True,
-        **rtma_kwargs,
+        **anl_kwargs,
     )
-    if not rtma:
+    if not anl:
         print(
-            f"  Could not find RTMA data for {valid_dt:%Y-%m-%d %H}Z. Skipping."
+            f"  Could not find {verif_label} data for {valid_dt:%Y-%m-%d %H}Z. Skipping."
         )
         return None
 
@@ -81,34 +84,34 @@ def generate_comparison_frame(
         return None
     ds_nwp = norm.wrap_longitude(ds_nwp)
 
-    rtma_selector = norm.get_selector("rtma", var_key)
+    anl_selector = norm.get_selector(verif_key, var_key)
     try:
-        ds_rtma = norm.ensure_dataset(
-            rtma.xarray(rtma_selector, remove_grib=True),
+        ds_anl = norm.ensure_dataset(
+            anl.xarray(anl_selector, remove_grib=True),
             var_key=var_key,
         )
     except Exception as e:
-        print(f"  Failed to load RTMA GRIB data ({valid_dt:%Y-%m-%d %H}Z): {e}")
+        print(f"  Failed to load {verif_label} GRIB data ({valid_dt:%Y-%m-%d %H}Z): {e}")
         return None
 
     # --- Variable name resolution ---
     try:
         nwp_varname = norm.pick_data_varname_from_ds(ds_nwp, var_key)
-        rtma_varname = norm.pick_data_varname_from_ds(ds_rtma, var_key)
+        anl_varname = norm.pick_data_varname_from_ds(ds_anl, var_key)
     except ValueError as e:
         print(f"  {e}")
         return None
 
-    # --- Regrid RTMA to model grid ---
-    src_grid = {"lon": ds_rtma["longitude"], "lat": ds_rtma["latitude"]}
+    # --- Regrid analysis to model grid ---
+    src_grid = {"lon": ds_anl["longitude"], "lat": ds_anl["latitude"]}
     tgt_grid = {"lon": ds_nwp["longitude"], "lat": ds_nwp["latitude"]}
     regridder = xe.Regridder(
         src_grid, tgt_grid, method="bilinear", periodic=False, reuse_weights=False
     )
-    rtma_on_nwp = regridder(ds_rtma[rtma_varname])
+    anl_on_nwp = regridder(ds_anl[anl_varname])
 
     # --- Compute difference ---
-    diff = fd.compute_fielddiff(ds_nwp[nwp_varname], rtma_on_nwp, var_key)
+    diff = fd.compute_fielddiff(ds_nwp[nwp_varname], anl_on_nwp, var_key)
 
     display_name = model_key
 
@@ -125,13 +128,14 @@ def generate_comparison_frame(
         var_title=var_title,
         var_cmap=var_cmap,
         plot_meta=var_meta,
+        verif_name=verif_label,
     )
 
     plot.plot_airports(ax_map, util.major_airports_df())
 
     # --- Save (include init cycle in filename so each frame is unique) ---
     filename = (
-        f"{display_name}_rtma_{var_key}_"
+        f"{display_name}_{verif_key}_{var_key}_"
         f"init{cycle_dt:%Y%m%d_%H}Z_F{forecast_hour:03d}_"
         f"valid{valid_dt:%Y%m%d_%H%MZ}.png"
     )
@@ -144,7 +148,7 @@ def generate_comparison_frame(
 
 def main():
     nwp_model = input(
-        "Enter NWP model to compare against RTMA : "
+        "Enter NWP model to compare against the analysis : "
         "HRRR, NAM5k, NAM12k, RAP, NBM, ARW, FV3, GFS, IFS, HREF: "
     ).strip()
 
@@ -166,13 +170,23 @@ def main():
         print(e)
         return
 
+    # --- Select verification source (no default; re-prompt until valid) ---
+    while True:
+        verif_in = input("Verify against which analysis? (RTMA / URMA): ").strip()
+        try:
+            verif_key = norm.normalize_verif_key(verif_in)
+            break
+        except ValueError as e:
+            print(e)
+    verif_label = verif_key.upper()
+
     if animate == "y":
-        # --- GIF mode: user provides the RTMA analysis time ---
+        # --- GIF mode: user provides the analysis time ---
         analysis_date = input(
-            "Enter the RTMA analysis date (YYYY-MM-DD): "
+            f"Enter the {verif_label} analysis date (YYYY-MM-DD): "
         ).strip()
         analysis_hour = int(
-            input("Enter the RTMA analysis hour, in 24-hour Z-time: ")
+            input(f"Enter the {verif_label} analysis hour, in 24-hour Z-time: ")
         )
         valid_dt = datetime.fromisoformat(
             f"{analysis_date} {analysis_hour:02d}:00"
@@ -189,7 +203,7 @@ def main():
 
         print(
             f"\nFound {len(runs)} {model_key.upper()} run(s) covering "
-            f"RTMA analysis {valid_dt:%Y-%m-%d %H}Z:"
+            f"{verif_label} analysis {valid_dt:%Y-%m-%d %H}Z:"
         )
         for cycle, fxx in runs:
             print(f"  Init {cycle:%Y-%m-%d %H}Z  F{fxx:03d}")
@@ -210,6 +224,7 @@ def main():
                     var_key,
                     cycle_dt,
                     fxx,
+                    verif_key,
                 )
                 future_to_run[future] = (cycle_dt, fxx)
 
@@ -240,7 +255,7 @@ def main():
             return
 
         gif_name = (
-            f"{model_key}_rtma_{var_key}_"
+            f"{model_key}_{verif_key}_{var_key}_"
             f"valid{valid_dt:%Y%m%d_%H}Z_all_runs.gif"
         )
         gif_path = FIGURE_DIR / gif_name
@@ -259,7 +274,7 @@ def main():
         cycle_dt = datetime.fromisoformat(f"{date} {init_hour:02d}:00")
 
         out_path = generate_comparison_frame(
-            model_key, var_key, cycle_dt, forecast
+            model_key, var_key, cycle_dt, forecast, verif_key
         )
         if out_path is None:
             return
