@@ -184,6 +184,7 @@ def plot_tempdiff_map_with_table(
     max_rows: int = 20,
     var_title: str = "2 m Temperature",
     var_cmap: str = "coolwarm",
+    verif_name: str = "RTMA",
 ):
     """Draw the CONUS map and add a ΔT table of selected airports."""
     plot_meta = plot_meta or {}
@@ -241,7 +242,7 @@ def plot_tempdiff_map_with_table(
         label=diff_label,
     )
     ax_map.set_title(
-        f"{model_name.upper()} − RTMA: {title}\n"
+        f"{model_name.upper()} − {verif_name.upper()}: {title}\n"
         f"Valid: {valid_dt:%Y-%m-%d %H:%MZ} | "
         f"Init: {cycle_dt:%Y-%m-%d %H:%MZ} | "
         f"Forecast Hour: {forecast}",

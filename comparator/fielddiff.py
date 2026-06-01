@@ -4,14 +4,15 @@ import xarray as xr
 _METERS_PER_SM = 1609.344
 
 
-def compute_fielddiff(nwp_field: xr.DataArray, rtma_field: xr.DataArray, var_key: str = "TMP") -> xr.DataArray:
-    """Compute field difference NWP - RTMA on the SAME grid.
+def compute_fielddiff(nwp_field: xr.DataArray, anl_field: xr.DataArray, var_key: str = "TMP") -> xr.DataArray:
+    """Compute field difference NWP - analysis on the SAME grid.
 
+    The analysis field is RTMA or URMA (see VERIFICATION_SOURCES).
     TMP / DPT (Kelvin inputs): returns Fahrenheit difference.
     VIS (meter inputs): returns statute-mile difference.
     Assumes inputs are on identical (y,x) coords.
     """
-    h, r = xr.align(nwp_field, rtma_field, join="exact")
+    h, r = xr.align(nwp_field, anl_field, join="exact")
 
     if var_key in ("TMP", "DPT"):
         valid = (np.isfinite(h) & np.isfinite(r) & (h > 150) & (h < 330) & (r > 150) & (r < 330))
