@@ -34,6 +34,9 @@ MODEL_REGISTRY = {
         "selector_map": {
             "TMP": r"TMP:2 m above ground:\d+ hour fcst",
             "DPT": r"DPT:2 m above ground:\d+ hour fcst",
+            "VIS": r"VIS:surface:\d+ hour fcst",
+            "WIND": r"(?:WIND|UGRD|VGRD):10 m above ground:\d+ hour fcst",
+            "GUST": r"GUST:(?:surface|10 m above ground):\d+ hour fcst",
         },
         "xarray_kwargs": {
             "backend_kwargs": {
@@ -64,6 +67,9 @@ MODEL_REGISTRY = {
         "selector_map": {
             "TMP": ":2t:",
             "DPT": ":2d:",
+            "VIS": ":vis:",
+            "WIND": r":(?:10si|10u|10v):",
+            "GUST": r":(?:i10fg|10fg):",
         },
     },
     "rtma": {
@@ -180,6 +186,31 @@ VAR_REGISTRY = {
         "vmin": -5.0, "vcenter": 0.0, "vmax": 5.0,
         "diff_label": "ΔVis (SM)",
     },
+    "WIND": {
+        # Capture a direct speed field OR the U/V components so wind speed can
+        # be derived when a model only publishes UGRD/VGRD.
+        "selector": r"(?:WIND|UGRD|VGRD):10 m above",
+        "aliases": ["wind", "wind speed", "wspd", "10 meter wind", "sustained wind"],
+        # direct-speed names first, then U/V components for derivation
+        "ds_candidates": ["si10", "10si", "ws", "wind",
+                          "u10", "v10", "u10m", "v10m", "ugrd", "vgrd", "10u", "10v"],
+        "units_hint": "m/s",
+        "title": "10 Meter Wind Speed",
+        "cmap": "PuOr",
+        "vmin": -15.0, "vcenter": 0.0, "vmax": 15.0,
+        "diff_label": "ΔWind (mph)",
+    },
+    "GUST": {
+        # HRRR/GFS publish gust at "surface"; NBM/RTMA/URMA at "10 m above ground".
+        "selector": r"GUST:(?:surface|10 m above ground)",
+        "aliases": ["gust", "gusts", "wind gust", "surface gust"],
+        "ds_candidates": ["gust", "i10fg", "fg10", "GUST"],
+        "units_hint": "m/s",
+        "title": "Surface Wind Gust",
+        "cmap": "PuOr",
+        "vmin": -20.0, "vcenter": 0.0, "vmax": 20.0,
+        "diff_label": "ΔGust (mph)",
+    },
 }
 
 ### Normalization of user inputs
@@ -295,3 +326,34 @@ def pick_data_varname_from_ds(ds, var_key: str) -> str:
         f"Could not determine data variable for {var_key}. "
         f"Dataset contains data_vars={data_vars}"
     )
+
+def _first_present(ds, names):
+    """Return the first name in *names* that is a data variable of *ds*."""
+    for name in names:
+        if name in ds.data_vars:
+            return name
+    return None
+
+def resolve_field_da(ds, var_key: str):
+    """Return the DataArray for *var_key* from a Herbie-loaded dataset.
+
+    For WIND we prefer a direct wind-speed field; when only the U/V
+    components are present we derive sqrt(u**2 + v**2). All other
+    variables fall back to pick_data_varname_from_ds().
+    """
+    if var_key == "WIND":
+        direct = ["si10", "10si", "ws", "wind"]
+        for cand in direct:
+            if cand in ds.data_vars:
+                return ds[cand]
+        u = _first_present(ds, ["u10", "u10m", "ugrd", "10u"])
+        v = _first_present(ds, ["v10", "v10m", "vgrd", "10v"])
+        if u is not None and v is not None:
+            speed = (ds[u] ** 2 + ds[v] ** 2) ** 0.5
+            return speed.rename("wind_speed")
+        raise ValueError(
+            f"WIND: no direct speed field and no U/V components in "
+            f"{list(ds.data_vars)}"
+        )
+    name = pick_data_varname_from_ds(ds, var_key)
+    return ds[name]

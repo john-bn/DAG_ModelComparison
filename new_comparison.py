@@ -94,10 +94,10 @@ def generate_comparison_frame(
         print(f"  Failed to load {verif_label} GRIB data ({valid_dt:%Y-%m-%d %H}Z): {e}")
         return None
 
-    # --- Variable name resolution ---
+    # --- Variable resolution (derives wind speed from U/V when needed) ---
     try:
-        nwp_varname = norm.pick_data_varname_from_ds(ds_nwp, var_key)
-        anl_varname = norm.pick_data_varname_from_ds(ds_anl, var_key)
+        nwp_field = norm.resolve_field_da(ds_nwp, var_key)
+        anl_field = norm.resolve_field_da(ds_anl, var_key)
     except ValueError as e:
         print(f"  {e}")
         return None
@@ -108,10 +108,10 @@ def generate_comparison_frame(
     regridder = xe.Regridder(
         src_grid, tgt_grid, method="bilinear", periodic=False, reuse_weights=False
     )
-    anl_on_nwp = regridder(ds_anl[anl_varname])
+    anl_on_nwp = regridder(anl_field)
 
     # --- Compute difference ---
-    diff = fd.compute_fielddiff(ds_nwp[nwp_varname], anl_on_nwp, var_key)
+    diff = fd.compute_fielddiff(nwp_field, anl_on_nwp, var_key)
 
     display_name = model_key
 
@@ -153,7 +153,8 @@ def main():
     ).strip()
 
     anl_var = input(
-        "Enter analysis variable (TMP = 2m temperature, DPT = 2m dew point, VIS = visibility): "
+        "Enter analysis variable (TMP = 2m temperature, DPT = 2m dew point, "
+        "VIS = visibility, WIND = 10m wind, GUST = wind gust): "
     ).strip()
     animate = input("Animate the plot? (y/n): ").strip().lower()
 

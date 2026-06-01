@@ -1,6 +1,6 @@
 # DAG_ModelComparison
 
-This program uses Herbie & xESMF to analyze temperature & dewpoint fields from the HRRR, NAM, NBM, GFS, & other models run at NCEP, verified against either the RTMA or URMA analysis. MatPlotLib & Cartopy are then used to plot the data in a map.
+This program uses Herbie & xESMF to analyze temperature, dewpoint, visibility, 10 m wind speed, & wind gust fields from the HRRR, NAM, NBM, GFS, & other models run at NCEP, verified against either the RTMA or URMA analysis. MatPlotLib & Cartopy are then used to plot the data in a map. Wind speed is derived from the model's U/V components when no direct wind-speed field is published.
 
 The driver file is new_comparison.py. The program is run by following;
 

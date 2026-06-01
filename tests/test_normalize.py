@@ -10,6 +10,7 @@ from comparator.normalize import (
     herbie_kwargs_for,
     normalize_var_key,
     pick_data_varname_from_ds,
+    resolve_field_da,
     get_selector,
     get_xarray_kwargs,
     wrap_longitude,
@@ -72,9 +73,19 @@ def test_normalize_var_key_direct_or_alias():
     assert normalize_var_key("dewpoint") == "DPT"
 
 
+def test_normalize_var_key_wind_and_gust():
+    assert normalize_var_key("WIND") == "WIND"
+    assert normalize_var_key("wind") == "WIND"
+    assert normalize_var_key("wind speed") == "WIND"
+    assert normalize_var_key("wspd") == "WIND"
+    assert normalize_var_key("GUST") == "GUST"
+    assert normalize_var_key("gusts") == "GUST"
+    assert normalize_var_key("wind gust") == "GUST"
+
+
 def test_normalize_var_key_invalid_raises():
     with pytest.raises(ValueError) as e:
-        normalize_var_key("wind_speed")
+        normalize_var_key("not-a-variable")
     assert "Invalid analysis variable" in str(e.value)
 
 
@@ -234,3 +245,61 @@ def test_ds_candidates_include_eccodes_short_names():
     dpt_cands = VAR_REGISTRY["DPT"]["ds_candidates"]
     assert "d" in dpt_cands
     assert "2d" in dpt_cands
+
+
+def test_var_registry_has_wind_and_gust():
+    for key in ("WIND", "GUST"):
+        assert key in VAR_REGISTRY
+        assert VAR_REGISTRY[key]["diff_label"].endswith("(mph)")
+
+
+def test_resolve_field_da_scalar_var_uses_direct_name():
+    ds = xr.Dataset({"t2m": (("x",), [1.0, 2.0, 3.0])})
+    da = resolve_field_da(ds, "TMP")
+    assert list(da.values) == [1.0, 2.0, 3.0]
+
+
+def test_resolve_field_da_wind_prefers_direct_speed():
+    ds = xr.Dataset(
+        {
+            "si10": (("x",), [3.0, 4.0]),
+            "u10": (("x",), [99.0, 99.0]),
+            "v10": (("x",), [99.0, 99.0]),
+        }
+    )
+    da = resolve_field_da(ds, "WIND")
+    assert list(da.values) == [3.0, 4.0]
+
+
+def test_resolve_field_da_wind_derives_from_uv():
+    # u=3, v=4 -> speed 5
+    ds = xr.Dataset(
+        {
+            "u10": (("x",), [3.0, 0.0]),
+            "v10": (("x",), [4.0, 0.0]),
+        }
+    )
+    da = resolve_field_da(ds, "WIND")
+    assert da.values[0] == pytest.approx(5.0)
+    assert da.values[1] == pytest.approx(0.0)
+
+
+def test_resolve_field_da_wind_raises_without_components():
+    ds = xr.Dataset({"foo": (("x",), [1.0])})
+    with pytest.raises(ValueError) as e:
+        resolve_field_da(ds, "WIND")
+    assert "no direct speed field" in str(e.value)
+
+
+def test_get_selector_wind_gust_fallback_and_maps():
+    import re
+    # default fallback (HRRR) uses VAR_REGISTRY selector; must match both the
+    # "surface" (HRRR/GFS) and "10 m above ground" (NBM/RTMA/URMA) gust labels.
+    gust_sel = get_selector("hrrr", "GUST")
+    assert re.search(gust_sel, ":GUST:surface:1 hour fcst")
+    assert re.search(gust_sel, ":GUST:10 m above ground:anl")
+    assert "WIND" in get_selector("hrrr", "WIND")
+    # IFS overrides with eccodes-style names
+    assert "10si" in get_selector("ifs", "WIND")
+    # HREF uses the precise forecast regex
+    assert "hour fcst" in get_selector("href", "GUST")

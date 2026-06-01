@@ -64,6 +64,36 @@ def test_compute_visdiff_masks_out_of_range():
     assert np.isnan(out.values).all()
 
 
+def test_compute_winddiff_basic_math_and_units():
+    # 1 m/s difference -> 2.23694 mph
+    h = _da([[1.0, 5.0]], name="wind")
+    r = _da([[0.0, 5.0]], name="wind")
+    out = compute_fielddiff(h, r, var_key="WIND")
+
+    assert np.isfinite(out.values).all()
+    assert out.values[0, 0] == pytest.approx(2.23694)
+    assert out.values[0, 1] == pytest.approx(0.0)
+
+
+def test_compute_winddiff_masks_out_of_range():
+    # negative, above 150 m/s, and NaN should all be masked
+    h = _da([[np.nan, -1.0, 200.0, 10.0]], name="wind")
+    r = _da([[5.0, 5.0, 5.0, np.nan]], name="wind")
+
+    out = compute_fielddiff(h, r, var_key="WIND")
+    assert np.isnan(out.values).all()
+
+
+def test_compute_gustdiff_basic_math_and_units():
+    # GUST uses the same m/s -> mph conversion as WIND
+    h = _da([[1.0, 0.0]], name="gust")
+    r = _da([[0.0, 0.0]], name="gust")
+    out = compute_fielddiff(h, r, var_key="GUST")
+
+    assert out.values[0, 0] == pytest.approx(2.23694)
+    assert out.values[0, 1] == pytest.approx(0.0)
+
+
 def test_compute_fielddiff_preserves_coords_and_dims():
     h = xr.DataArray(
         [[300.0, 301.0], [302.0, 303.0]],
