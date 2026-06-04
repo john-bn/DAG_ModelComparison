@@ -18,6 +18,23 @@ DATA_DIR.mkdir(exist_ok=True)
 FIGURE_DIR = Path("./figures")
 FIGURE_DIR.mkdir(exist_ok=True)
 
+# --- Shared analysis state for GIF workers --------------------------------
+# In GIF mode every frame validates against the SAME analysis time on the SAME
+# model grid, so the regridded analysis is identical for all frames. We compute
+# it once in the parent and hand it to each worker process via the pool
+# initializer (set once per process rather than pickled per task).
+_SHARED_ANL_ON_NWP = None
+_SHARED_TGT_LON = None
+_SHARED_TGT_LAT = None
+
+
+def _init_worker(anl_on_nwp, tgt_lon, tgt_lat):
+    """Pool initializer: stash the precomputed analysis in module globals."""
+    global _SHARED_ANL_ON_NWP, _SHARED_TGT_LON, _SHARED_TGT_LAT
+    _SHARED_ANL_ON_NWP = anl_on_nwp
+    _SHARED_TGT_LON = tgt_lon
+    _SHARED_TGT_LAT = tgt_lat
+
 
 def generate_comparison_frame(
     model_key,
@@ -47,7 +64,7 @@ def generate_comparison_frame(
         cycle_dt,
         fxx=forecast_hour,
         save_dir=str(save_dir),
-        overwrite=True,
+        overwrite=False,
         **nwp_kwargs,
     )
     if not nwp:
@@ -63,7 +80,7 @@ def generate_comparison_frame(
         valid_dt,
         fxx=0,
         save_dir=str(save_dir),
-        overwrite=True,
+        overwrite=False,
         **anl_kwargs,
     )
     if not anl:
@@ -146,6 +163,208 @@ def generate_comparison_frame(
     return out_path
 
 
+def precompute_analysis_on_model_grid(
+    model_key,
+    var_key,
+    valid_dt,
+    runs,
+    verif_key="rtma",
+    save_dir=DATA_DIR,
+    weights_dir=DATA_DIR,
+):
+    """Fetch + load the analysis once and regrid it onto the model grid.
+
+    Every frame in a GIF validates against the same *valid_dt* on the same model
+    grid, so the regridded analysis is identical for all of them. We do that work
+    here, in the parent, exactly once.
+
+    *runs* is the list of (cycle_dt, fxx) pairs; any one of them yields the model
+    target grid, so we try them in order until one loads.
+
+    Returns (anl_on_nwp, tgt_lon, tgt_lat), or None if the analysis or every
+    reference NWP file could not be loaded (caller should abort the GIF).
+    """
+    verif_label = verif_key.upper()
+
+    # --- Fetch + load analysis once (keep GRIB on disk for re-runs) ---
+    anl_kwargs = norm.herbie_kwargs_for(verif_key)
+    anl = Herbie(
+        valid_dt,
+        fxx=0,
+        save_dir=str(save_dir),
+        overwrite=False,
+        **anl_kwargs,
+    )
+    if not anl:
+        print(f"  Could not find {verif_label} data for {valid_dt:%Y-%m-%d %H}Z.")
+        return None
+
+    anl_selector = norm.get_selector(verif_key, var_key)
+    try:
+        ds_anl = norm.ensure_dataset(
+            anl.xarray(anl_selector, remove_grib=False),
+            var_key=var_key,
+        )
+        anl_field = norm.resolve_field_da(ds_anl, var_key)
+    except Exception as e:
+        print(f"  Failed to load {verif_label} GRIB data ({valid_dt:%Y-%m-%d %H}Z): {e}")
+        return None
+
+    # --- Load ONE reference NWP file to obtain the model target grid ---
+    nwp_kwargs = norm.herbie_kwargs_for(model_key)
+    nwp_xr_kwargs = norm.get_xarray_kwargs(model_key)
+    selector = norm.get_selector(model_key, var_key)
+
+    ds_nwp = None
+    for cycle_dt, fxx in runs:
+        nwp = Herbie(
+            cycle_dt,
+            fxx=fxx,
+            save_dir=str(save_dir),
+            overwrite=False,
+            **nwp_kwargs,
+        )
+        if not nwp:
+            continue
+        try:
+            ds_nwp = norm.wrap_longitude(
+                norm.ensure_dataset(
+                    nwp.xarray(selector, remove_grib=False, **nwp_xr_kwargs),
+                    var_key=var_key,
+                )
+            )
+            break
+        except Exception as e:
+            print(
+                f"  Reference grid load failed for {model_key.upper()} "
+                f"{cycle_dt:%Y-%m-%d %H}Z F{fxx:03d}: {e}"
+            )
+            ds_nwp = None
+
+    if ds_nwp is None:
+        print(f"  Could not load any {model_key.upper()} reference file for the target grid.")
+        return None
+
+    # --- Build the regridder once (cache weights to disk) ---
+    src_grid = {"lon": ds_anl["longitude"], "lat": ds_anl["latitude"]}
+    tgt_grid = {"lon": ds_nwp["longitude"], "lat": ds_nwp["latitude"]}
+    weights_path = Path(weights_dir) / f"weights_{verif_key}_to_{model_key}_bilinear.nc"
+    try:
+        regridder = xe.Regridder(
+            src_grid, tgt_grid, method="bilinear", periodic=False,
+            reuse_weights=weights_path.exists(), filename=str(weights_path),
+        )
+    except Exception as e:
+        # Stale/mismatched weights file: rebuild from scratch.
+        print(f"  Rebuilding regridder weights ({weights_path.name}): {e}")
+        if weights_path.exists():
+            weights_path.unlink()
+        regridder = xe.Regridder(
+            src_grid, tgt_grid, method="bilinear", periodic=False,
+            reuse_weights=False, filename=str(weights_path),
+        )
+
+    # Materialize so the result pickles cleanly to worker processes
+    # (no dask graph or open GRIB/netCDF file handle attached).
+    anl_on_nwp = regridder(anl_field).compute()
+    return anl_on_nwp, ds_nwp["longitude"], ds_nwp["latitude"]
+
+
+def _render_frame_worker(
+    model_key,
+    var_key,
+    cycle_dt,
+    forecast_hour,
+    verif_key="rtma",
+    save_dir=DATA_DIR,
+    out_dir=FIGURE_DIR,
+):
+    """GIF worker: render one frame against the shared precomputed analysis.
+
+    Reads the regridded analysis and target grid from module globals set by
+    *_init_worker*, so it only fetches/loads the per-frame NWP forecast.
+    Returns the saved PNG Path, or None if the frame could not be built.
+    """
+    anl_on_nwp = _SHARED_ANL_ON_NWP
+    tgt_lon = _SHARED_TGT_LON
+    tgt_lat = _SHARED_TGT_LAT
+
+    verif_label = verif_key.upper()
+    var_meta = norm.VAR_REGISTRY[var_key]
+    var_cmap = var_meta["cmap"]
+    var_title = var_meta["title"]
+    valid_dt = cycle_dt + timedelta(hours=forecast_hour)
+
+    nwp_kwargs = norm.herbie_kwargs_for(model_key)
+    selector = norm.get_selector(model_key, var_key)
+
+    # --- Fetch NWP data (this frame's unique forecast) ---
+    nwp = Herbie(
+        cycle_dt,
+        fxx=forecast_hour,
+        save_dir=str(save_dir),
+        overwrite=False,
+        **nwp_kwargs,
+    )
+    if not nwp:
+        print(
+            f"  Could not find {model_key.upper()} data for "
+            f"{cycle_dt:%Y-%m-%d %H}Z F{forecast_hour:02d}. Skipping."
+        )
+        return None
+
+    nwp_xr_kwargs = norm.get_xarray_kwargs(model_key)
+    try:
+        ds_nwp = norm.ensure_dataset(
+            nwp.xarray(selector, remove_grib=True, **nwp_xr_kwargs),
+            var_key=var_key,
+        )
+    except Exception as e:
+        print(f"  Failed to load {model_key} GRIB data (F{forecast_hour:02d}): {e}")
+        return None
+    ds_nwp = norm.wrap_longitude(ds_nwp)
+
+    try:
+        nwp_field = norm.resolve_field_da(ds_nwp, var_key)
+    except ValueError as e:
+        print(f"  {e}")
+        return None
+
+    # --- Compute difference against the shared regridded analysis ---
+    diff = fd.compute_fielddiff(nwp_field, anl_on_nwp, var_key)
+
+    display_name = model_key
+
+    fig, (ax_map, ax_tbl) = plot.plot_tempdiff_map_with_table(
+        tgt_lon,
+        tgt_lat,
+        diff,
+        valid_dt,
+        cycle_dt,
+        forecast_hour,
+        display_name,
+        util.major_airports_df(),
+        max_rows=20,
+        var_title=var_title,
+        var_cmap=var_cmap,
+        plot_meta=var_meta,
+        verif_name=verif_label,
+    )
+
+    plot.plot_airports(ax_map, util.major_airports_df())
+
+    filename = (
+        f"{display_name}_{verif_key}_{var_key}_"
+        f"init{cycle_dt:%Y%m%d_%H}Z_F{forecast_hour:03d}_"
+        f"valid{valid_dt:%Y%m%d_%H%MZ}.png"
+    )
+    out_path = out_dir / filename
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved frame: {out_path}")
+    return out_path
+
+
 def main():
     nwp_model = input(
         "Enter NWP model to compare against the analysis : "
@@ -209,6 +428,19 @@ def main():
         for cycle, fxx in runs:
             print(f"  Init {cycle:%Y-%m-%d %H}Z  F{fxx:03d}")
 
+        # Fetch + load + regrid the analysis ONCE (identical for every frame)
+        print(f"\nPreparing {verif_label} analysis {valid_dt:%Y-%m-%d %H}Z ...")
+        shared = precompute_analysis_on_model_grid(
+            model_key, var_key, valid_dt, runs, verif_key
+        )
+        if shared is None:
+            print(
+                f"Could not prepare {verif_label} analysis for "
+                f"{valid_dt:%Y-%m-%d %H}Z. Aborting GIF."
+            )
+            return
+        anl_on_nwp, tgt_lon, tgt_lat = shared
+
         max_workers = min(os.cpu_count() or 4, len(runs), 8)
         print(
             f"\nGenerating {len(runs)} comparison frames "
@@ -216,11 +448,15 @@ def main():
         )
 
         frame_results = {}  # cycle_dt -> path
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        with ProcessPoolExecutor(
+            max_workers=max_workers,
+            initializer=_init_worker,
+            initargs=(anl_on_nwp, tgt_lon, tgt_lat),
+        ) as executor:
             future_to_run = {}
             for cycle_dt, fxx in runs:
                 future = executor.submit(
-                    generate_comparison_frame,
+                    _render_frame_worker,
                     model_key,
                     var_key,
                     cycle_dt,
