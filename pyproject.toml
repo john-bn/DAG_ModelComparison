@@ -6,7 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "comparator"
 version = "0.0.0"
 requires-python = ">3.11"
-dependencies = []
+# Only the pure-Python deps are declared here. The heavy scientific stack
+# (herbie, xesmf/esmf, cartopy, metpy, xarray, ...) is provided by the conda
+# environment in environment.yml — do not try to pip-install it.
+dependencies = ["pyyaml"]
+
+[project.scripts]
+compare = "comparator.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["comparator"]

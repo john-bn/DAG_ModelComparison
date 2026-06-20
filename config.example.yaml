@@ -1,23 +1,20 @@
-# Data settings
-data:
-  cache_dir: "./data"
-  overwrite: false
+# Example configuration for the comparator CLI.
+#
+# Copy to config.yaml and edit. Resolution precedence (highest first):
+#   CLI flag  >  environment variable (DAG_*)  >  this file  >  built-in default
+#
+# On the server, set ABSOLUTE paths here — cron's working directory is $HOME,
+# so relative paths would resolve to the wrong place.
 
-# Models to compare
-models:
-  - hrrr
-  - nam12k
+# --- Directories (absolute paths recommended on the server) ---
+data_dir: /home/jneedham/dag/data       # GRIB downloads + regridder weight cache
+out_dir:  /home/jneedham/dag/figures     # PNG/GIF outputs + runs.jsonl manifest
+log_dir:  /home/jneedham/dag/logs        # comparison.log (rotating)
 
-# Variable selection
-variable: t2m
+# --- Default verification analysis: rtma or urma ---
+verif: rtma
 
-# Plot settings
-plot:
-  domain: conus
-  cmap: diverging
-  center_on_zero: true
-  output_dir: "./figures"
-
-# Time settings
-time:
-  valid_time: "2026-02-01T12:00Z"
+# --- Rolling real-time defaults (used by `compare run` without an explicit --date) ---
+rolling:
+  lag_hours: 2        # subtract from the current hour to pick the analysis time
+  default_lead: 24    # preferred forecast lead (hours) to verify in single mode
