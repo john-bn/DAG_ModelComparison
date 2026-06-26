@@ -56,17 +56,35 @@ logs to `<log_dir>/comparison.log`.
 
 ## Deploying on a Linux server with cron
 
-1. Copy the project to the server and create the environment:
-   `conda env create -f environment.yml`
-2. Install the CLI: `conda activate new_comparator && pip install -e .`
-3. `cp config.example.yaml config.yaml` and edit the absolute paths.
-4. Sanity-check end to end:
+The cron wrapper (`scripts/run_comparison.sh`) defaults to a project at
+`$HOME/DAG_ModelComparison` and a conda install at `$HOME/miniconda3` with the
+`new_comparator` env, so if you follow that layout it needs no edits.
+
+1. Put the repo at `~/DAG_ModelComparison` on the server.
+2. Install Miniconda in your home directory (no root needed) if it isn't there:
+   `bash Miniconda3-latest-Linux-x86_64.sh -b -p ~/miniconda3`
+3. Create the environment and install the CLI:
+   `conda env create -f environment.yml` then
+   `conda activate new_comparator && pip install -e .`
+4. `cp config.example.yaml config.yaml` and set the absolute `data_dir`,
+   `out_dir`, `log_dir`; create them with `mkdir -p`. `config.yaml` is
+   gitignored — each machine keeps its own.
+5. Sanity-check end to end:
    `compare run --model hrrr --var TMP --verif rtma --dry-run`
-5. Edit `scripts/run_comparison.sh` — set `PROJECT_DIR` and pick the env
-   activation block (conda by default; module-load / venv variants included).
-6. Schedule it: `crontab scripts/crontab.example` (edit the paths first), or
-   merge its lines into `crontab -e`. One crontab line = one model+variable.
-   The example staggers start minutes and redirects each job to its own log.
+6. (Only if your layout differs) edit `scripts/run_comparison.sh` — set
+   `PROJECT_DIR`/`CONDA_BASE` or pick the module-load / venv activation block.
+   The wrapper runs the CLI via `python -m comparator.cli`, so it works as long
+   as the env activates (even before `pip install -e .`).
+7. Schedule it: `crontab scripts/crontab.example` (edit the paths first), or
+   merge its lines into `crontab -e`. One crontab line = one model+variable; the
+   example schedules HRRR / NAM12K / GFS / NBM × TMP / DPT / WIND / GUST hourly
+   (staggered, each to its own log) plus a daily retrospective GIF. Validate any
+   new model+variable with a single `compare run` first — not every model
+   publishes every field.
 
 "No data yet" (the target hour is too fresh) is logged and exits 0 so cron does
 not email an alarm; genuine failures exit non-zero.
+
+The scheduled CLI and the manual entry points share the same engine, so running
+by hand still works exactly as before — the interactive `python new_comparison.py`
+and the non-interactive `compare run | list | latest` (see above).
