@@ -7,9 +7,9 @@
 # so relative paths would resolve to the wrong place.
 
 # --- Directories (absolute paths recommended on the server) ---
-data_dir: /home/jneedham/dag/data       # GRIB downloads + regridder weight cache
-out_dir:  /home/jneedham/dag/figures     # PNG/GIF outputs + runs.jsonl manifest
-log_dir:  /home/jneedham/dag/logs        # comparison.log (rotating)
+data_dir: /home/ACCU/john.needham/dag/data       # GRIB downloads + regridder weight cache
+out_dir:  /home/ACCU/john.needham/dag/figures     # PNG/GIF outputs + runs.jsonl manifest
+log_dir:  /home/ACCU/john.needham/dag/logs        # comparison.log (rotating)
 
 # --- Default verification analysis: rtma or urma ---
 verif: rtma

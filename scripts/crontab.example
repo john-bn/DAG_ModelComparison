@@ -3,23 +3,44 @@
 # Install with:   crontab scripts/crontab.example
 # Or merge lines into your existing crontab with:   crontab -e
 #
-# Each line verifies ONE model+variable against the analysis. Add more lines
-# for more combinations. Cron times are interpreted in the system timezone, but
-# the wrapper forces TZ=UTC and the job picks its analysis time from "now - lag"
-# (default 2h), so exact minute-of-hour only affects when the snapshot is taken.
+# Each line verifies ONE model+variable against the analysis. Add or remove
+# lines for more/fewer combinations. Cron times are interpreted in the system
+# timezone, but the wrapper forces TZ=UTC and the job picks its analysis time
+# from "now - lag" (default 2h), so the exact minute-of-hour only affects when
+# the snapshot is taken.
 #
-# Stagger start minutes so jobs don't all hit the data servers at once.
-# Always redirect stdout+stderr to a per-job log (the app also writes its own
-# rotating comparison.log).
+# Start minutes are staggered so the jobs don't all hit NOMADS/AWS at once.
+# Every line redirects stdout+stderr to its own per-job log (the app also writes
+# its own rotating comparison.log in log_dir).
+#
+# NOTE: not every model publishes every field. Validate each combination with a
+# single real run before relying on it:  compare run --model <m> --var <v>
 
 SHELL=/bin/bash
-WRAPPER=/home/jneedham/DAG_ModelComparison/scripts/run_comparison.sh
-LOGDIR=/home/jneedham/dag/logs
+WRAPPER=/home/ACCU/john.needham/DAG_ModelComparison/scripts/run_comparison.sh
+LOGDIR=/home/ACCU/john.needham/dag/logs
 
 # min hour dom mon dow   command
-  0   *    *   *   *     $WRAPPER --model hrrr   --var TMP  --verif rtma >> $LOGDIR/cron.hrrr.tmp.log  2>&1
-  5   *    *   *   *     $WRAPPER --model hrrr   --var WIND --verif rtma >> $LOGDIR/cron.hrrr.wind.log 2>&1
- 10   *    *   *   *     $WRAPPER --model nam12k --var TMP  --verif rtma >> $LOGDIR/cron.nam.tmp.log   2>&1
+# --- HRRR (hourly, rapidly updating) ---
+  0 * * * *  $WRAPPER --model hrrr   --var TMP  --verif rtma >> $LOGDIR/cron.hrrr.tmp.log  2>&1
+  3 * * * *  $WRAPPER --model hrrr   --var DPT  --verif rtma >> $LOGDIR/cron.hrrr.dpt.log  2>&1
+  6 * * * *  $WRAPPER --model hrrr   --var WIND --verif rtma >> $LOGDIR/cron.hrrr.wind.log 2>&1
+  9 * * * *  $WRAPPER --model hrrr   --var GUST --verif rtma >> $LOGDIR/cron.hrrr.gust.log 2>&1
+# --- NAM 12km ---
+ 15 * * * *  $WRAPPER --model nam12k --var TMP  --verif rtma >> $LOGDIR/cron.nam.tmp.log   2>&1
+ 18 * * * *  $WRAPPER --model nam12k --var DPT  --verif rtma >> $LOGDIR/cron.nam.dpt.log   2>&1
+ 21 * * * *  $WRAPPER --model nam12k --var WIND --verif rtma >> $LOGDIR/cron.nam.wind.log  2>&1
+ 24 * * * *  $WRAPPER --model nam12k --var GUST --verif rtma >> $LOGDIR/cron.nam.gust.log  2>&1
+# --- GFS (global; updates ~6-hourly, an hourly run re-verifies the latest analysis) ---
+ 30 * * * *  $WRAPPER --model gfs    --var TMP  --verif rtma >> $LOGDIR/cron.gfs.tmp.log   2>&1
+ 33 * * * *  $WRAPPER --model gfs    --var DPT  --verif rtma >> $LOGDIR/cron.gfs.dpt.log   2>&1
+ 36 * * * *  $WRAPPER --model gfs    --var WIND --verif rtma >> $LOGDIR/cron.gfs.wind.log  2>&1
+ 39 * * * *  $WRAPPER --model gfs    --var GUST --verif rtma >> $LOGDIR/cron.gfs.gust.log  2>&1
+# --- NBM (National Blend of Models) ---
+ 45 * * * *  $WRAPPER --model nbm    --var TMP  --verif rtma >> $LOGDIR/cron.nbm.tmp.log   2>&1
+ 48 * * * *  $WRAPPER --model nbm    --var DPT  --verif rtma >> $LOGDIR/cron.nbm.dpt.log   2>&1
+ 51 * * * *  $WRAPPER --model nbm    --var WIND --verif rtma >> $LOGDIR/cron.nbm.wind.log  2>&1
+ 54 * * * *  $WRAPPER --model nbm    --var GUST --verif rtma >> $LOGDIR/cron.nbm.gust.log  2>&1
 
-# Example: a daily retrospective GIF (all forecast leads vs one analysis time):
-# 30  6    *   *   *     $WRAPPER --model hrrr --var TMP --verif rtma --mode gif >> $LOGDIR/cron.hrrr.gif.log 2>&1
+# --- Daily retrospective GIF (all forecast leads vs one analysis time) ---
+ 30 6 * * *  $WRAPPER --model hrrr   --var TMP  --verif rtma --mode gif >> $LOGDIR/cron.hrrr.gif.log 2>&1

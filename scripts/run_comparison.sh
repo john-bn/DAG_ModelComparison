@@ -26,6 +26,11 @@ unset HERBIE_SAVE_DIR || true
 PROJECT_DIR="${DAG_PROJECT_DIR:-$HOME/DAG_ModelComparison}"
 cd "$PROJECT_DIR"
 
+# Point the CLI at the project's config.yaml explicitly, so resolution does not
+# depend on the working directory (the cd above already lands us here, but this
+# makes it robust if someone overrides PROJECT_DIR or runs from elsewhere).
+export DAG_CONFIG="${DAG_CONFIG:-$PROJECT_DIR/config.yaml}"
+
 # ---------------------------------------------------------------------------
 # 2. Activate the Python environment — pick ONE block for your server.
 # ---------------------------------------------------------------------------
@@ -47,4 +52,6 @@ conda activate "${DAG_CONDA_ENV:-new_comparator}"
 # ---------------------------------------------------------------------------
 # 3. Run. All CLI args are passed straight through from the crontab line.
 # ---------------------------------------------------------------------------
-exec compare run "$@"
+# Invoke via `python -m` rather than the `compare` console script: it works
+# whenever the conda env is active, even if `pip install -e .` has not been run.
+exec python -m comparator.cli run "$@"
