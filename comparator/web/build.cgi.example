@@ -1,0 +1,40 @@
+#!/bin/bash
+#
+# CGI wrapper for the comparator web form.
+#
+# The intranet web server executes this per form submit (on demand — no daemon).
+# It is a bash wrapper (not a bare python shebang) on purpose: it `source`s the
+# conda env's activate script so the env-activation hooks run — the esmf/xesmf,
+# pyproj and cartopy stack relies on env vars (ESMFMKFILE, PROJ_DATA, GDAL_DATA)
+# that those hooks set. Calling the env's python directly would skip them.
+#
+# DEPLOY:
+#   1. Copy this file to your web-served directory as `build.cgi`.
+#   2. Edit the paths below for your server.
+#   3. chmod +x build.cgi
+#   4. Confirm CGI is enabled first with test.cgi (see docs/DEPLOYMENT.md).
+#
+# The form (index.html) and the output images live in the SAME directory as this
+# script, so the browser reaches results at <this-dir-URL>/output/<file>.
+
+set -euo pipefail
+export TZ=UTC
+export MPLBACKEND=Agg
+
+# Herbie lets HERBIE_SAVE_DIR override the configured data_dir — clear it so the
+# data_dir from config.yaml is authoritative.
+unset HERBIE_SAVE_DIR || true
+
+# --- EDIT THESE for your server --------------------------------------------
+# The conda-pack'd environment (see docs/DEPLOYMENT.md for building it offline).
+source "$HOME/new_comparator/bin/activate"
+
+# Point the CLI at the project's config.yaml. Set out_dir in that file to the
+# `output/` subdirectory of THIS web directory so images are web-served.
+export DAG_CONFIG="$HOME/dag/config.yaml"
+
+# The repo checkout, so `python -m comparator.webserver` resolves the package.
+cd "$HOME/DAG_ModelComparison"
+# ---------------------------------------------------------------------------
+
+exec python -m comparator.webserver cgi

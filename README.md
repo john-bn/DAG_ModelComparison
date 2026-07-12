@@ -17,9 +17,9 @@ This program is built for Python 3.11 (see `environment.yml`).
 
 ## Command-line interface (`compare`)
 
-For unattended (cron) and scripted use there is a non-interactive CLI built on
-the same engine. After installing the package (`pip install -e .` inside the
-conda env) the `compare` command is on your `$PATH` (equivalently
+For scripted and terminal use there is a non-interactive CLI built on the same
+engine. After installing the package (`pip install -e .` inside the conda env)
+the `compare` command is on your `$PATH` (equivalently
 `python -m comparator.cli`):
 
 ```
@@ -28,7 +28,7 @@ conda env) the `compare` command is on your `$PATH` (equivalently
 # closest to --lead. Prints the saved PNG path on success.
 compare run --model hrrr --var TMP --verif rtma
 
-# See exactly what a scheduled run would target, without fetching anything:
+# See exactly what a rolling run would target, without fetching anything:
 compare run --model hrrr --var TMP --verif rtma --dry-run
 
 # Pin a specific case (backfill). single mode needs --date --init --fxx:
@@ -48,43 +48,42 @@ Variables: `TMP`, `DPT`, `VIS`, `WIND`, `GUST`. Models: `hrrr`, `nam5k`,
 ### Configuration
 
 Copy `config.example.yaml` to `config.yaml` and set **absolute** `data_dir`,
-`out_dir`, and `log_dir` (cron's working directory is `$HOME`, so relative
-paths land in the wrong place). Settings resolve in the order
+`out_dir`, and `log_dir` (the CGI/web-server working directory may differ from
+the project, so relative paths land in the wrong place). Settings resolve in the
+order
 **CLI flag > `DAG_*` env var > `config.yaml` > built-in default**. Each `run`
 appends a record (incl. mean / RMSE error stats) to `<out_dir>/runs.jsonl` and
 logs to `<log_dir>/comparison.log`.
 
-## Deploying on a Linux server with cron
+## Web UI (`compare-web`)
 
-The cron wrapper (`scripts/run_comparison.sh`) defaults to a project at
-`$HOME/DAG_ModelComparison` and a conda install at `$HOME/miniconda3` with the
-`new_comparator` env, so if you follow that layout it needs no edits.
+Instead of a scheduled job, comparisons are triggered **on demand** from an HTML
+form: pick a model, variable, verification source, mode (single frame or GIF),
+and target time, click **Build comparison**, and the server downloads the GRIB2
+files and renders the image right then. It drives the same engine as the CLI and
+appends to the same `runs.jsonl` manifest, so `compare list` still sees web
+builds.
 
-1. Put the repo at `~/DAG_ModelComparison` on the server.
-2. Install Miniconda in your home directory (no root needed) if it isn't there:
-   `bash Miniconda3-latest-Linux-x86_64.sh -b -p ~/miniconda3`
-3. Create the environment and install the CLI:
-   `conda env create -f environment.yml` then
-   `conda activate new_comparator && pip install -e .`
-4. `cp config.example.yaml config.yaml` and set the absolute `data_dir`,
-   `out_dir`, `log_dir`; create them with `mkdir -p`. `config.yaml` is
-   gitignored — each machine keeps its own.
-5. Sanity-check end to end:
-   `compare run --model hrrr --var TMP --verif rtma --dry-run`
-6. (Only if your layout differs) edit `scripts/run_comparison.sh` — set
-   `PROJECT_DIR`/`CONDA_BASE` or pick the module-load / venv activation block.
-   The wrapper runs the CLI via `python -m comparator.cli`, so it works as long
-   as the env activates (even before `pip install -e .`).
-7. Schedule it: `crontab scripts/crontab.example` (edit the paths first), or
-   merge its lines into `crontab -e`. One crontab line = one model+variable; the
-   example schedules HRRR / NAM12K / GFS / NBM × TMP / DPT / WIND / GUST hourly
-   (staggered, each to its own log) plus a daily retrospective GIF. Validate any
-   new model+variable with a single `compare run` first — not every model
-   publishes every field.
+Run it locally (no extra dependencies — pure standard library):
 
-"No data yet" (the target hour is too fresh) is logged and exits 0 so cron does
-not email an alarm; genuine failures exit non-zero.
+```
+compare-web serve                 # then open http://127.0.0.1:8000/
+compare-web serve --port 9000     # (equivalently: python -m comparator.webserver serve)
+```
 
-The scheduled CLI and the manual entry points share the same engine, so running
-by hand still works exactly as before — the interactive `python new_comparison.py`
-and the non-interactive `compare run | list | latest` (see above).
+`config.yaml` / `DAG_*` env vars still govern `data_dir`, `out_dir`, and
+`log_dir` exactly as for the CLI.
+
+### Deploying on the intranet server (on-demand, no daemon)
+
+The form is meant to live behind the company intranet web server as a small
+**CGI** app: a static `index.html` plus a `build.cgi` wrapper the web server runs
+per submit — no cron, no long-running process. Because the scientific stack is
+conda-managed and the target box is typically air-gapped, the environment is
+shipped with **conda-pack**. The full, step-by-step guide (building the env
+offline, checking whether CGI is enabled, laying out the web directory, and an
+SSH-tunnel fallback) is in **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
+The manual entry points still work unchanged and share the same engine — the
+interactive `python new_comparison.py` and the non-interactive
+`compare run | list | latest` (see above).

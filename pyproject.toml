@@ -13,6 +13,12 @@ dependencies = ["pyyaml"]
 
 [project.scripts]
 compare = "comparator.cli:main"
+compare-web = "comparator.webserver:main"
 
 [tool.setuptools.packages.find]
 include = ["comparator"]
+
+[tool.setuptools.package-data]
+# Ship the web form template + CGI helpers so an installed package can serve
+# the form and `render-form` can find the template.
+comparator = ["web/*.html", "web/*.cgi", "web/*.cgi.example"]
