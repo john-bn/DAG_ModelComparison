@@ -1,22 +1,28 @@
-# Deploying the web form on the intranet server
+# Deploying the web daemon behind the intranet server
 
 The comparator is driven from a web form: a user picks a model, variable,
-verification source, mode, and target time, clicks **Build comparison**, and the
-server downloads the GRIB2 files on demand and renders the image. There is **no
-scheduled job and no long-running daemon** — the work happens per click via CGI.
+verification source, mode, and target time, clicks **Build comparison**, and
+the server downloads the GRIB2 files on demand and renders the image.
+
+The server (`compare-web serve`) is a **long-running daemon**, not a
+per-request CGI script: the conda env activation and the scientific-stack
+imports (matplotlib/cartopy/scipy) happen once at startup, not on every
+click. Apache httpd is configured as a **reverse proxy** — it forwards a URL
+path prefix to the daemon over loopback and does nothing scientific-stack
+specific itself. Since this host has no usable `systemctl --user` (no D-Bus
+user session, no lingering) and no sudo for a system-level systemd unit, the
+daemon is supervised by **cron** instead: started at boot, restarted by a
+watchdog if it stops answering.
 
 ```
-Browser ──GET──▶ https://fcinet.accuweather.com/<path>/index.html   (static form)
-        ──POST─▶ https://fcinet.accuweather.com/<path>/build.cgi     (bash → python)
-                     │ activates the conda env, runs the comparator,
-                     │ downloads GRIB2, writes PNG/GIF into ./output/
-                     ▼
-        ◀HTML──  results page  <img src="output/…"> + mean/RMSE/N stats
+Browser ──GET/POST─▶ https://fcinet.accuweather.com/<path>/dag/
+                          │  Apache: ProxyPass /dag/ → http://127.0.0.1:8000/
+                          ▼
+                      compare-web serve   (always running, cron-supervised)
+                          │ downloads GRIB2, writes PNG/GIF into out_dir
+                          ▼
+        ◀──HTML──   results page  <img src="output/…"> + mean/RMSE/N stats
 ```
-
-The three moving parts — `index.html`, `build.cgi`, and the `output/` directory
-— all live in **one web-served directory** so the browser can reach the form and
-the images at the same intranet URL.
 
 ---
 
@@ -60,64 +66,28 @@ python -c "import herbie, scipy, cartopy, matplotlib; print('env OK')"
 and run `conda env create -f environment.yml` directly on the server instead of
 conda-pack.
 
-Also put the repo on the server (e.g. `~/DAG_ModelComparison`) and, from the
-activated env, `pip install -e .` (optional — the CGI runs the package with
-`python -m`, which works as long as the env is active and you `cd` into the repo).
+The repo lives at `/home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute`
+on this host. From the activated env, `pip install -e .` (optional — the
+daemon is started with `python -m`, which works as long as the env is active
+and the working directory is the repo).
 
 ---
 
-## 2. Check whether CGI is enabled for your directory
+## 2. Lay out directories and config.yaml
 
-Copy `comparator/web/test.cgi` into your web directory and make it executable:
-
-```bash
-cp comparator/web/test.cgi ~/public_html/dag/test.cgi   # adjust to your web dir
-chmod +x ~/public_html/dag/test.cgi
-curl -s https://fcinet.accuweather.com/<path>/dag/test.cgi
-```
-
-* Prints **`CGI OK …`** → CGI works. Continue to step 3.
-* Prints the **script's text** → CGI is not enabled; the server is serving the
-  file statically. Options: add an `.htaccess` (below) if overrides are allowed;
-  ask IT to enable `ExecCGI` / a `cgi-bin` for your directory; or fall back to
-  the standalone server over an SSH tunnel (step 6).
-
-If your Apache allows per-directory overrides, this `.htaccess` in the web dir
-often enables it:
-
-```apache
-Options +ExecCGI
-AddHandler cgi-script .cgi
-```
-
----
-
-## 3. Lay out the web directory
-
-Pick the directory the intranet server serves for you (commonly
-`~/public_html/<something>` for `https://host/~user/…`, or a mapped path). Then:
+Unlike the old CGI deploy, `out_dir` no longer needs to live inside a
+web-served directory — the daemon serves `output/…` itself, so any path the
+daemon's user can write to works.
 
 ```bash
-WEBDIR=~/public_html/dag           # adjust to your served path
-mkdir -p "$WEBDIR/output"
-
-# Backend wrapper (edit its paths — see step 4):
-cp comparator/web/build.cgi.example "$WEBDIR/build.cgi"
-chmod +x "$WEBDIR/build.cgi"
-
-# The static form, with the dropdowns filled from the registry and its POST
-# target pointed at build.cgi:
-source "$HOME/new_comparator/bin/activate"
-cd ~/DAG_ModelComparison
-python -m comparator.webserver render-form --action build.cgi > "$WEBDIR/index.html"
+mkdir -p "$HOME/dag/data" "$HOME/dag/figures" "$HOME/dag/logs"
 ```
 
-Create `config.yaml` (copy `config.example.yaml`) and set **`out_dir` to the
-`output/` directory inside the web dir**, so rendered images are web-served:
+Create `config.yaml` (copy `config.example.yaml`) with **absolute** paths:
 
 ```yaml
 data_dir: /home/ACCU/<you>/dag/data        # GRIB downloads + regridder weights
-out_dir:  /home/ACCU/<you>/public_html/dag/output   # <-- inside the web dir
+out_dir:  /home/ACCU/<you>/dag/figures     # PNG/GIF outputs + runs.jsonl manifest
 log_dir:  /home/ACCU/<you>/dag/logs
 verif: rtma
 rolling:
@@ -127,59 +97,96 @@ rolling:
 
 ---
 
-## 4. Point `build.cgi` at your paths
+## 3. Install the daemon + cron supervision
 
-Edit the three lines marked *EDIT THESE* in `build.cgi`:
+The `deploy/` directory has everything needed:
+
+* `run_dag_server.sh` — idempotent start (safe to call repeatedly).
+* `watchdog_dag_server.sh` — cron'd health check + restart.
+* `restart_dag_server.sh` — manual restart after a code deploy.
+* `crontab.example` — the two cron lines below.
+
+Edit the **EDIT THESE** block at the top of `run_dag_server.sh` for your
+`ENV_ACTIVATE` and `DAG_CONFIG` paths (the `REPO_DIR` default already matches
+this host's checkout). Then:
 
 ```bash
-source "$HOME/new_comparator/bin/activate"   # the conda-pack'd env
-export DAG_CONFIG="$HOME/dag/config.yaml"     # the config.yaml from step 3
-cd "$HOME/DAG_ModelComparison"                # the repo checkout
+chmod +x deploy/*.sh
+crontab -e
 ```
 
-The wrapper also forces `TZ=UTC` and `MPLBACKEND=Agg` and clears
-`HERBIE_SAVE_DIR`, so downloads always land in the configured `data_dir`.
+and add (see `deploy/crontab.example` for the exact lines):
+
+```cron
+@reboot         /home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute/deploy/run_dag_server.sh
+*/5 * * * *     /home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute/deploy/watchdog_dag_server.sh
+```
+
+Start it immediately without waiting for a reboot or the next cron tick:
+
+```bash
+deploy/run_dag_server.sh
+curl http://127.0.0.1:8000/    # sanity check before wiring up httpd
+```
+
+---
+
+## 4. Configure httpd as a reverse proxy
+
+`deploy/dag-comparator.conf` has the `ProxyPass`/`ProxyPassReverse` block.
+`mod_proxy` + `mod_proxy_http` are required — confirm with `httpd -M | grep
+proxy` (or `apache2ctl -M`). Drop the conf file (or its contents) wherever
+your httpd config is included from, adjusting the `/dag/` path if you want a
+different URL, then reload httpd:
+
+```bash
+apachectl graceful       # or: sudo systemctl reload httpd
+```
+
+If you don't have write access to httpd's config yourself, hand
+`deploy/dag-comparator.conf` to IT along with the port number the daemon
+listens on (8000 by default) — it's a small, self-contained addition, not a
+new module install (proxy modules are commonly already loaded, as they were
+on this host).
 
 ---
 
 ## 5. Try it
 
-Open `https://fcinet.accuweather.com/<path>/dag/index.html`, submit **HRRR / TMP
-/ RTMA / Single frame / Most recent available**, and confirm an image appears
-with mean/RMSE stats. `compare list` (from the CLI) will also show the run, since
-the web build appends to the same `runs.jsonl` manifest.
+Open `https://fcinet.accuweather.com/<path>/dag/`, submit **HRRR / TMP /
+RTMA / Single frame / Most recent available**, and confirm an image appears
+with mean/RMSE stats. `compare list` (from the CLI) will also show the run,
+since the web build appends to the same `runs.jsonl` manifest.
 
 ---
 
-## 6. Fallback: standalone server over an SSH tunnel
+## 6. Redeploying after a code change
 
-If CGI cannot be enabled, run the bundled server (no extra dependencies) bound to
-loopback and reach it through an SSH tunnel:
+Cron only restarts the daemon on reboot or if the watchdog finds it not
+answering — it won't notice a new commit. After `git pull`ing an update:
 
 ```bash
-# on the server (keep it running with screen/tmux/nohup if you like):
-source "$HOME/new_comparator/bin/activate" && cd ~/DAG_ModelComparison
-DAG_CONFIG=~/dag/config.yaml python -m comparator.webserver serve --port 8000
-
-# on your workstation:
-ssh -L 8000:127.0.0.1:8000 <you>@<server>
-# then open http://localhost:8000/ in your browser
+deploy/restart_dag_server.sh
 ```
-
-The standalone server serves the form, runs the build, and serves the images
-itself at `/output/…` — nothing is exposed on the LAN.
 
 ---
 
 ## Caveats
 
-* **CGI request timeouts.** A single-frame build takes tens of seconds and is
-  well within a typical Apache `Timeout` (default 300s). An **animated GIF**
-  animates every forecast covering the analysis time and can take several
-  minutes — it may exceed the web server's timeout under CGI. For GIFs, prefer
-  the CLI (`compare run --mode gif …`) on the server, or raise the server
-  `Timeout` for that directory.
-* **GIF parallelism.** GIF rendering uses a process pool; running it under CGI is
-  heavier than a single frame. The single-frame path is the intended web use.
-* **Concurrency.** CGI handles each request in its own process, so concurrent
-  submissions are fine, but each still downloads/renders independently.
+* **GIF timeouts.** `deploy/dag-comparator.conf` sets a 300s proxy timeout for
+  this reason: an animated GIF spans every forecast covering the analysis
+  time and can take several minutes to render, well past mod_proxy's default
+  (60s). If GIF builds still time out, raise the `timeout=` value further.
+* **Concurrency is now shared-process, not per-request.** Under the old CGI
+  model, each submission got its own OS process — fully isolated, if
+  wasteful. The daemon handles concurrent requests on separate threads within
+  *one* process, and the plotting code uses matplotlib's global `pyplot`
+  state, which isn't thread-safe. `comparator/webserver.py` serializes builds
+  with a lock to prevent concurrent submissions from corrupting each other's
+  figures, so simultaneous requests queue rather than run in parallel. For a
+  handful of internal users this is a non-issue; if usage grows enough that
+  queuing becomes noticeable, consider a small worker-process pool instead of
+  the single-process lock.
+* **GIF parallelism.** GIF rendering uses a process pool (`gif_workers` in
+  `config.yaml`) independent of the lock above — keep it low (default 1) on a
+  memory-constrained server.
