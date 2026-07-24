@@ -18,6 +18,7 @@ Environment variables:
     DAG_VERIF        default verification source (rtma|urma)
     DAG_LAG_HOURS    rolling data-latency buffer (hours)
     DAG_DEFAULT_LEAD rolling default forecast lead (hours)
+    DAG_GIF_WORKERS  GIF render parallelism (1 = sequential, low memory)
 """
 
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from comparator import timesel
 
 DEFAULT_VERIF = "rtma"
 DEFAULT_CONFIG_NAME = "config.yaml"
+DEFAULT_GIF_WORKERS = 1
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,7 @@ class Config:
     verif: str
     lag_hours: int
     default_lead: int
+    gif_workers: int
 
     @property
     def manifest_path(self) -> Path:
@@ -98,6 +101,7 @@ def load_config(
     verif: str | None = None,
     lag_hours: int | None = None,
     default_lead: int | None = None,
+    gif_workers: int | None = None,
 ) -> Config:
     """Resolve a :class:`Config`, applying CLI > env > file > default.
 
@@ -129,6 +133,12 @@ def load_config(
         rolling_cfg.get("default_lead"),
         default=timesel.DEFAULT_LEAD_HOURS,
     )
+    workers = _pick(
+        _int_or_none(gif_workers),
+        _int_or_none(env("DAG_GIF_WORKERS")),
+        file_cfg.get("gif_workers"),
+        default=DEFAULT_GIF_WORKERS,
+    )
 
     return Config(
         data_dir=_abspath(data),
@@ -137,4 +147,5 @@ def load_config(
         verif=str(verification).strip().lower(),
         lag_hours=int(lag),
         default_lead=int(lead),
+        gif_workers=max(1, int(workers)),
     )

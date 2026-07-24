@@ -188,7 +188,7 @@ def run_build(target: ResolvedTarget, cfg) -> dict:
 
     gif_path = pipeline.generate_gif(
         target.model_key, target.var_key, target.valid_dt, target.verif_key,
-        data_dir=cfg.data_dir, out_dir=cfg.out_dir,
+        data_dir=cfg.data_dir, out_dir=cfg.out_dir, max_workers=cfg.gif_workers,
     )
     if gif_path is None:
         return {"ok": False, "message": (

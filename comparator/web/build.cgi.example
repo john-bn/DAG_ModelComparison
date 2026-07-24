@@ -4,9 +4,9 @@
 #
 # The intranet web server executes this per form submit (on demand — no daemon).
 # It is a bash wrapper (not a bare python shebang) on purpose: it `source`s the
-# conda env's activate script so the env-activation hooks run — the esmf/xesmf,
-# pyproj and cartopy stack relies on env vars (ESMFMKFILE, PROJ_DATA, GDAL_DATA)
-# that those hooks set. Calling the env's python directly would skip them.
+# conda env's activate script so the env-activation hooks run — the pyproj and
+# cartopy stack relies on env vars (PROJ_DATA, GDAL_DATA) that those hooks set.
+# Calling the env's python directly would skip them.
 #
 # DEPLOY:
 #   1. Copy this file to your web-served directory as `build.cgi`.

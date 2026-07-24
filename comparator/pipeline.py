@@ -22,13 +22,13 @@ import os
 
 from herbie.core import Herbie
 import numpy as np
-import xesmf as xe
 import matplotlib.pyplot as plt
 
 from comparator import fielddiff as fd
 from comparator import plotting as plot
 from comparator import util
 from comparator import normalize as norm
+from comparator.regrid import KDTreeRegridder
 from comparator.build_gif import create_gif
 
 logger = logging.getLogger(__name__)
@@ -173,13 +173,14 @@ def generate_comparison_frame(
         logger.error("%s", e)
         return None
 
-    # --- Regrid analysis to model grid ---
-    src_grid = {"lon": ds_anl["longitude"], "lat": ds_anl["latitude"]}
-    tgt_grid = {"lon": ds_nwp["longitude"], "lat": ds_nwp["latitude"]}
-    regridder = xe.Regridder(
-        src_grid, tgt_grid, method="bilinear", periodic=False, reuse_weights=False
+    # --- Regrid analysis to model grid (k-NN IDW; weights cached to disk) ---
+    weights_path = data_dir / f"weights_{verif_key}_to_{model_key}_knn.npz"
+    regridder = KDTreeRegridder.from_grids_cached(
+        ds_anl["longitude"], ds_anl["latitude"],
+        ds_nwp["longitude"], ds_nwp["latitude"],
+        cache_path=weights_path,
     )
-    anl_on_nwp = regridder(anl_field)
+    anl_on_nwp = nwp_field.copy(data=regridder.apply(anl_field.values))
 
     # --- Compute difference ---
     diff = fd.compute_fielddiff(nwp_field, anl_on_nwp, var_key)
@@ -214,6 +215,9 @@ def generate_comparison_frame(
     out_path = out_dir / filename
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
+    # Release the large arrays/datasets promptly (esp. important for cron/web
+    # servers where several runs share one process).
+    del ds_nwp, ds_anl, nwp_field, anl_field, anl_on_nwp, diff
     logger.info("Saved frame: %s", out_path)
     return FrameResult(path=out_path, mean=mean, rmse=rmse, n=n)
 
@@ -309,28 +313,20 @@ def precompute_analysis_on_model_grid(
         )
         return None
 
-    # --- Build the regridder once (cache weights to disk) ---
-    src_grid = {"lon": ds_anl["longitude"], "lat": ds_anl["latitude"]}
-    tgt_grid = {"lon": ds_nwp["longitude"], "lat": ds_nwp["latitude"]}
-    weights_path = Path(weights_dir) / f"weights_{verif_key}_to_{model_key}_bilinear.nc"
-    try:
-        regridder = xe.Regridder(
-            src_grid, tgt_grid, method="bilinear", periodic=False,
-            reuse_weights=weights_path.exists(), filename=str(weights_path),
-        )
-    except Exception as e:
-        # Stale/mismatched weights file: rebuild from scratch.
-        logger.warning("Rebuilding regridder weights (%s): %s", weights_path.name, e)
-        if weights_path.exists():
-            weights_path.unlink()
-        regridder = xe.Regridder(
-            src_grid, tgt_grid, method="bilinear", periodic=False,
-            reuse_weights=False, filename=str(weights_path),
-        )
+    # --- Build the regridder once (k-NN IDW; weights cached to disk) ---
+    weights_path = Path(weights_dir) / f"weights_{verif_key}_to_{model_key}_knn.npz"
+    regridder = KDTreeRegridder.from_grids_cached(
+        ds_anl["longitude"], ds_anl["latitude"],
+        ds_nwp["longitude"], ds_nwp["latitude"],
+        cache_path=weights_path,
+    )
 
-    # Materialize so the result pickles cleanly to worker processes
-    # (no dask graph or open GRIB/netCDF file handle attached).
-    anl_on_nwp = regridder(anl_field).compute()
+    # Return a plain DataArray on the model grid. Building it from a reference
+    # NWP field's coords keeps it aligned for fielddiff's exact-join, and it
+    # holds a materialized ndarray (no open GRIB handle) so it pickles cleanly
+    # to worker processes.
+    ref_field = norm.resolve_field_da(ds_nwp, var_key)
+    anl_on_nwp = ref_field.copy(data=regridder.apply(anl_field.values))
     return anl_on_nwp, ds_nwp["longitude"], ds_nwp["latitude"]
 
 
@@ -427,6 +423,7 @@ def _render_frame_worker(
     out_path = out_dir / filename
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
+    del ds_nwp, nwp_field, diff
     logger.info("Saved frame: %s", out_path)
     return out_path
 
@@ -440,14 +437,19 @@ def generate_gif(
     data_dir,
     out_dir,
     duration=500,
-    max_workers=None,
+    max_workers=1,
 ):
     """Build an animated GIF of every forecast covering *valid_dt*.
 
     Auto-discovers all (cycle, fxx) runs that verify against *valid_dt*, renders
-    a frame per run in parallel (sharing one precomputed regridded analysis),
-    and stitches them oldest-cycle-first. Returns the GIF Path, or None if no
-    frames could be produced.
+    a frame per run (sharing one precomputed regridded analysis), and stitches
+    them oldest-cycle-first. Returns the GIF Path, or None if no frames could be
+    produced.
+
+    *max_workers* controls parallelism. The default (1) renders frames
+    sequentially in the parent process, which keeps peak memory low -- the
+    right choice on a memory-constrained server. Set >1 to fan out across
+    worker processes (capped at 4) when the box has RAM to spare.
     """
     data_dir = Path(data_dir)
     out_dir = Path(out_dir)
@@ -483,43 +485,62 @@ def generate_gif(
         return None
     anl_on_nwp, tgt_lon, tgt_lat = shared
 
-    if max_workers is None:
-        max_workers = min(os.cpu_count() or 4, len(runs), 8)
-    logger.info(
-        "Generating %d comparison frames using %d parallel workers ...",
-        len(runs), max_workers,
-    )
+    # Clamp: a value <1 means sequential; the pool is capped at 4 to bound RAM.
+    max_workers = max(1, min(int(max_workers or 1), os.cpu_count() or 1, len(runs), 4))
 
     frame_results = {}  # cycle_dt -> path
-    with ProcessPoolExecutor(
-        max_workers=max_workers,
-        initializer=_init_worker,
-        initargs=(anl_on_nwp, tgt_lon, tgt_lat),
-    ) as executor:
-        future_to_run = {}
-        for cycle_dt, fxx in runs:
-            future = executor.submit(
-                _render_frame_worker,
-                model_key,
-                var_key,
-                cycle_dt,
-                fxx,
-                verif_key,
-                data_dir,
-                out_dir,
-            )
-            future_to_run[future] = (cycle_dt, fxx)
 
-        for future in as_completed(future_to_run):
-            cycle_dt, fxx = future_to_run[future]
+    if max_workers == 1:
+        # Sequential: render in the parent process, no pool -> lowest memory.
+        # The workers read the shared analysis from module globals, so set them
+        # here directly instead of via a pool initializer.
+        logger.info("Generating %d comparison frames sequentially ...", len(runs))
+        _init_worker(anl_on_nwp, tgt_lon, tgt_lat)
+        for cycle_dt, fxx in runs:
             try:
-                path = future.result()
+                path = _render_frame_worker(
+                    model_key, var_key, cycle_dt, fxx, verif_key, data_dir, out_dir,
+                )
                 if path is not None:
                     frame_results[cycle_dt] = path
                 else:
                     logger.warning("Skipped: Init %sZ F%03d", f"{cycle_dt:%Y-%m-%d %H}", fxx)
             except Exception as e:
                 logger.error("Failed: Init %sZ F%03d: %s", f"{cycle_dt:%Y-%m-%d %H}", fxx, e)
+    else:
+        logger.info(
+            "Generating %d comparison frames using %d parallel workers ...",
+            len(runs), max_workers,
+        )
+        with ProcessPoolExecutor(
+            max_workers=max_workers,
+            initializer=_init_worker,
+            initargs=(anl_on_nwp, tgt_lon, tgt_lat),
+        ) as executor:
+            future_to_run = {}
+            for cycle_dt, fxx in runs:
+                future = executor.submit(
+                    _render_frame_worker,
+                    model_key,
+                    var_key,
+                    cycle_dt,
+                    fxx,
+                    verif_key,
+                    data_dir,
+                    out_dir,
+                )
+                future_to_run[future] = (cycle_dt, fxx)
+
+            for future in as_completed(future_to_run):
+                cycle_dt, fxx = future_to_run[future]
+                try:
+                    path = future.result()
+                    if path is not None:
+                        frame_results[cycle_dt] = path
+                    else:
+                        logger.warning("Skipped: Init %sZ F%03d", f"{cycle_dt:%Y-%m-%d %H}", fxx)
+                except Exception as e:
+                    logger.error("Failed: Init %sZ F%03d: %s", f"{cycle_dt:%Y-%m-%d %H}", fxx, e)
 
     # Preserve chronological order (oldest init first) for the GIF.
     frame_paths = [frame_results[dt] for dt, _ in runs if dt in frame_results]

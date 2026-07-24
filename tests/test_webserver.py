@@ -13,7 +13,7 @@ def _cfg():
     base = Path(tempfile.mkdtemp())
     return appconfig.Config(
         data_dir=base / "data", out_dir=base / "figures", log_dir=base / "logs",
-        verif="rtma", lag_hours=2, default_lead=24,
+        verif="rtma", lag_hours=2, default_lead=24, gif_workers=1,
     )
 
 

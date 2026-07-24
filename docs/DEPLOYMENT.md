@@ -51,7 +51,7 @@ conda-unpack        # rewrites the absolute paths baked into the env
 Verify the heavy stack imports:
 
 ```bash
-python -c "import herbie, xesmf, cartopy, matplotlib; print('env OK')"
+python -c "import herbie, scipy, cartopy, matplotlib; print('env OK')"
 ```
 
 **Alternative — internal mirror.** If AccuWeather has an internal conda channel
