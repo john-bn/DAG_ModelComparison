@@ -1,0 +1,11 @@
+# Comparator web daemon supervision — no systemd available on this host (no
+# usable `systemctl --user`, no sudo for a system-level unit), so cron plays
+# the restart-on-crash/start-on-boot role instead. See docs/DEPLOYMENT.md.
+#
+# Install with `crontab -e`, adjusting REPO_DIR if your checkout moves.
+#
+# Start the daemon on boot:
+@reboot         /home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute/deploy/run_dag_server.sh
+#
+# Restart it if it stops answering (5-minute worst-case detection window):
+*/5 * * * *     /home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute/deploy/watchdog_dag_server.sh

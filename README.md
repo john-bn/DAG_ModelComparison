@@ -48,7 +48,7 @@ Variables: `TMP`, `DPT`, `VIS`, `WIND`, `GUST`. Models: `hrrr`, `nam5k`,
 ### Configuration
 
 Copy `config.example.yaml` to `config.yaml` and set **absolute** `data_dir`,
-`out_dir`, and `log_dir` (the CGI/web-server working directory may differ from
+`out_dir`, and `log_dir` (the web-server working directory may differ from
 the project, so relative paths land in the wrong place). Settings resolve in the
 order
 **CLI flag > `DAG_*` env var > `config.yaml` > built-in default**. Each `run`
@@ -74,15 +74,17 @@ compare-web serve --port 9000     # (equivalently: python -m comparator.webserve
 `config.yaml` / `DAG_*` env vars still govern `data_dir`, `out_dir`, and
 `log_dir` exactly as for the CLI.
 
-### Deploying on the intranet server (on-demand, no daemon)
+### Deploying on the intranet server (daemon + reverse proxy)
 
-The form is meant to live behind the company intranet web server as a small
-**CGI** app: a static `index.html` plus a `build.cgi` wrapper the web server runs
-per submit — no cron, no long-running process. Because the scientific stack is
-conda-managed and the target box is typically air-gapped, the environment is
-shipped with **conda-pack**. The full, step-by-step guide (building the env
-offline, checking whether CGI is enabled, laying out the web directory, and an
-SSH-tunnel fallback) is in **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+The form is meant to live behind the company intranet web server: `compare-web
+serve` runs as an always-on daemon (cron-supervised — no systemd available),
+and Apache httpd reverse-proxies a URL path to it (`ProxyPass`/
+`ProxyPassReverse`). Because the scientific stack is conda-managed and the
+target box is typically air-gapped, the environment is shipped with
+**conda-pack**. The full, step-by-step guide (building the env offline,
+installing the daemon + cron supervision, and the httpd proxy config) is in
+**[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**, with the deployable scripts and
+config in **[deploy/](deploy/)**.
 
 The manual entry points still work unchanged and share the same engine — the
 interactive `python new_comparison.py` and the non-interactive
