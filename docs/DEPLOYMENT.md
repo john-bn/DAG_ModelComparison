@@ -107,8 +107,12 @@ The `deploy/` directory has everything needed:
 * `crontab.example` — the two cron lines below.
 
 Edit the **EDIT THESE** block at the top of `run_dag_server.sh` for your
-`ENV_ACTIVATE` and `DAG_CONFIG` paths (the `REPO_DIR` default already matches
-this host's checkout). Then:
+micromamba activation (`MICROMAMBA` binary path, `MAMBA_ROOT_PREFIX`, and
+`ENV_NAME`) and your `DAG_CONFIG` path (the `REPO_DIR` default already matches
+this host's checkout). Cron does not source `~/.bashrc`, so those three
+micromamba values must be spelled out explicitly rather than inherited from an
+interactive shell — find them with `which micromamba`, `echo
+"$MAMBA_ROOT_PREFIX"`, and `micromamba env list`. Then:
 
 ```bash
 chmod +x deploy/*.sh
