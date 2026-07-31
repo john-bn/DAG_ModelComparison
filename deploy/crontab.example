@@ -9,3 +9,11 @@
 #
 # Restart it if it stops answering (5-minute worst-case detection window):
 */5 * * * *     /home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute/deploy/watchdog_dag_server.sh
+#
+# Delete GRIB2 downloads, their .idx index files, and generated PNG/GIF figures
+# older than 24h so the disk does not grow without bound. Runs hourly at :17
+# (offset from the watchdog); the schedule frequency is independent of the 24h
+# retention window baked into the script. Spares the regridder weight cache
+# (weights_*_knn.npz) and the runs.jsonl manifest. Pass a different retention,
+# e.g. `... cleanup_dag_files.sh 48`, to keep two days instead.
+17 * * * *      /home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute/deploy/cleanup_dag_files.sh
