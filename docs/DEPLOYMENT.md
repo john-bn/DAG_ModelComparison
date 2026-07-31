@@ -101,7 +101,8 @@ The `deploy/` directory has everything needed:
 * `run_dag_server.sh` — idempotent start (safe to call repeatedly).
 * `watchdog_dag_server.sh` — cron'd health check + restart.
 * `restart_dag_server.sh` — manual restart after a code deploy.
-* `crontab.example` — the two cron lines below.
+* `cleanup_dag_files.sh` — cron'd disk cleanup (see §7).
+* `crontab.example` — the three cron lines below.
 
 Edit the **EDIT THESE** block at the top of `run_dag_server.sh` for your
 micromamba activation (`MICROMAMBA` binary path, `MAMBA_ROOT_PREFIX`, and
@@ -121,7 +122,10 @@ and add (see `deploy/crontab.example` for the exact lines):
 ```cron
 @reboot         /home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute/deploy/run_dag_server.sh
 */5 * * * *     /home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute/deploy/watchdog_dag_server.sh
+17 * * * *      /home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute/deploy/cleanup_dag_files.sh
 ```
+
+(The third line is the disk cleanup job — see §7.)
 
 Start it immediately without waiting for a reboot or the next cron tick:
 
@@ -169,6 +173,42 @@ answering — it won't notice a new commit. After `git pull`ing an update:
 ```bash
 deploy/restart_dag_server.sh
 ```
+
+---
+
+## 7. Purge aged-out files so the disk doesn't fill
+
+Every comparison downloads GRIB2 files into `data_dir` and writes PNG/GIF
+figures into `out_dir`. Left alone these grow without bound. `cleanup_dag_files.sh`
+deletes them once they age past a retention window (**24 hours by default**):
+
+* in `data_dir` — `*.grib2` / `*.grib` and their `*.idx` index files, then any
+  now-empty `<model>/<date>/` subdirectories Herbie leaves behind;
+* in `out_dir` — `*.png` and `*.gif` figures.
+
+It deliberately **keeps**, regardless of age: the regridder weight cache
+(`weights_*_knn.npz` — expensive to rebuild and reused across every run), the
+`runs.jsonl` manifest that `compare list` reads, and everything in `log_dir`.
+
+It's pure `find` with **no micromamba/conda activation** on purpose, so cleanup
+keeps working even if the Python env is broken — which is exactly when the disk
+is most likely filling up. Edit the **EDIT THESE** block at the top so
+`DATA_DIR`/`OUT_DIR` match your `config.yaml` (or just export the same `DAG_DATA_DIR`
+/ `DAG_OUT_DIR` the app already honors — those win over the block).
+
+Dry-run it first to see what it would remove without deleting anything:
+
+```bash
+deploy/cleanup_dag_files.sh --dry-run          # 24h window, delete nothing
+deploy/cleanup_dag_files.sh 48 --dry-run        # 48h window, delete nothing
+```
+
+Then add the hourly cron line from §3 (or `deploy/crontab.example`). The cron
+*frequency* (hourly) is independent of the *retention* (24h): running hourly
+just means a file is removed within an hour of crossing 24h old. To keep files
+longer, pass a different hour count as the first argument, e.g.
+`cleanup_dag_files.sh 72`, or set `DAG_RETENTION_HOURS`. Each run appends a line
+per sweep to `<log_dir>/cleanup.log`.
 
 ---
 
