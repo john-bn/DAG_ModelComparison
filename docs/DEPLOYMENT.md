@@ -26,50 +26,47 @@ Browser ──GET/POST─▶ https://fcinet.accuweather.com/<path>/dag/
 
 ---
 
-## 1. Get the conda environment onto the (air-gapped) server
+## 1. Get the Python environment onto the server
 
-`conda env create -f environment.yml` needs to reach conda-forge, so it will not
-work on a box without internet. Use **conda-pack** to build the environment once
-elsewhere and ship a self-contained copy.
-
-> The pack must be built on the **same OS/arch as the server** — Linux x86-64.
-> If you only have a Mac, build it in a `linux/amd64` Docker container.
-
-On an internet-connected Linux x86-64 host (or `docker run --platform=linux/amd64
--it continuumio/miniconda3 bash`):
+The scientific stack (herbie, scipy, cartopy, matplotlib, metpy, pyproj, …) is
+declared in `environment.yml`. Build it directly on the server with
+**micromamba**, which creates the env under `$MAMBA_ROOT_PREFIX/envs/`:
 
 ```bash
-conda env create -f environment.yml          # creates env "new_comparator"
-conda activate new_comparator
-conda install -c conda-forge conda-pack       # one-off, for the packer itself
-conda pack -n new_comparator -o new_comparator.tar.gz
+micromamba create -f environment.yml -n new_comparator
 ```
 
-Copy `new_comparator.tar.gz` to the server, then:
+The env name (`new_comparator`) and the root prefix (`$MAMBA_ROOT_PREFIX`, e.g.
+`~/micromamba`) you use here are exactly the `ENV_NAME` and `MAMBA_ROOT_PREFIX`
+values set in `deploy/run_dag_server.sh` (§3) — keep the two in sync.
+
+Verify the heavy stack imports. `micromamba run -n` runs the command inside the
+env without needing shell activation, so it's a self-contained check:
 
 ```bash
-mkdir -p "$HOME/new_comparator"
-tar -xzf new_comparator.tar.gz -C "$HOME/new_comparator"
-source "$HOME/new_comparator/bin/activate"
-conda-unpack        # rewrites the absolute paths baked into the env
+micromamba run -n new_comparator \
+    python -c "import herbie, scipy, cartopy, matplotlib; print('env OK')"
 ```
 
-Verify the heavy stack imports:
+**If the server can't reach conda-forge directly** (air-gapped or behind a
+proxy): point micromamba at AccuWeather's internal conda channel
+(Artifactory/Nexus) in `~/.condarc` — micromamba reads it —
 
-```bash
-python -c "import herbie, scipy, cartopy, matplotlib; print('env OK')"
+```yaml
+channels: [https://<internal-mirror>/conda-forge]
+channel_priority: strict
 ```
 
-**Alternative — internal mirror.** If AccuWeather has an internal conda channel
-(Artifactory/Nexus), point conda at it in `~/.condarc`
-(`channels: [https://<internal-mirror>/conda-forge]`, `channel_priority: strict`)
-and run `conda env create -f environment.yml` directly on the server instead of
-conda-pack.
+then run the same `micromamba create` above. For a box with **no** reachable
+channel at all, build the env once on a matching **Linux x86-64** host, ship it
+with `conda-pack`, and unpack it into `$MAMBA_ROOT_PREFIX/envs/new_comparator`
+(run the bundled `bin/conda-unpack` afterward to fix the baked-in paths); the
+micromamba activation in `run_dag_server.sh` then drives it unchanged.
 
 The repo lives at `/home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute`
-on this host. From the activated env, `pip install -e .` (optional — the
-daemon is started with `python -m`, which works as long as the env is active
-and the working directory is the repo).
+on this host. `micromamba run -n new_comparator pip install -e .` is optional —
+the daemon starts with `python -m` from the repo dir, which works as long as the
+env is active and the working directory is the repo.
 
 ---
 
