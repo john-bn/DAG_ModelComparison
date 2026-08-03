@@ -17,8 +17,8 @@ REPO_DIR="/home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute"
 #   which micromamba ; echo "$MAMBA_ROOT_PREFIX" ; micromamba env list
 MICROMAMBA="$HOME/.local/bin/micromamba"     # absolute path to the binary
 export MAMBA_ROOT_PREFIX="$HOME/micromamba"  # root prefix that holds your envs
-ENV_NAME="new_comparator"                    # the env's name (from `env list`)
-DAG_CONFIG="$HOME/dag/config.yaml"
+ENV_NAME="rtc"                               # the env's name (from `env list`)
+DAG_CONFIG="$REPO_DIR/config.yaml"
 PORT=8000
 # ---------------------------------------------------------------------------
 
