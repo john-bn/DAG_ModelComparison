@@ -1,4 +1,4 @@
-"""On-demand web front-end for the comparator.
+"""Web front-end for the comparator.
 
 This replaces the former cron scheduling: instead of a scheduled job picking what
 to verify, a person opens an HTML form, enters the values (model, variable,
@@ -6,16 +6,15 @@ verification source, mode, target time) and clicks a button. The server then
 downloads the GRIB2 files on command and builds the image — exactly the same
 :mod:`comparator.pipeline` calls the interactive shim and the CLI make.
 
-Two ways to run the same core logic:
+``compare-web serve`` runs a standalone :class:`ThreadingHTTPServer`. It's the
+same command for local workstation testing and for the production deployment,
+where it runs as an always-on, cron-supervised daemon behind an Apache httpd
+reverse proxy (``ProxyPass``) — see docs/DEPLOYMENT.md. There is no CGI mode:
+the scientific stack (matplotlib/cartopy/scipy) is imported once at daemon
+startup rather than re-imported on every request.
 
-* ``compare-web serve``      — a standalone :class:`ThreadingHTTPServer` for local
-  testing on a workstation (and as a fallback if CGI is unavailable).
-* ``compare-web cgi``        — the CGI protocol, invoked per request by an
-  existing web server (e.g. the company intranet Apache) via a small ``build.cgi``
-  wrapper. This is the on-demand, no-daemon deployment: the form and the output
-  images live under the user's web-served directory.
-* ``compare-web render-form`` — print the concrete static ``index.html`` (with the
-  dropdown options filled from the registry) for a CGI deployment.
+``compare-web render-form`` prints the rendered ``index.html`` to stdout, handy
+for previewing template/registry changes without starting the server.
 
 The heavy scientific stack is imported lazily inside :func:`run_build` (like the
 CLI) so ``render-form`` / ``--help`` stay fast and import-light.
@@ -39,6 +38,7 @@ import argparse
 import html
 import logging
 import sys
+import threading
 
 from comparator import appconfig, manifest, normalize, timesel
 
@@ -188,7 +188,7 @@ def run_build(target: ResolvedTarget, cfg) -> dict:
 
     gif_path = pipeline.generate_gif(
         target.model_key, target.var_key, target.valid_dt, target.verif_key,
-        data_dir=cfg.data_dir, out_dir=cfg.out_dir,
+        data_dir=cfg.data_dir, out_dir=cfg.out_dir, max_workers=cfg.gif_workers,
     )
     if gif_path is None:
         return {"ok": False, "message": (
@@ -235,8 +235,14 @@ def form_options_html():
     return {"model": model_opts, "var": var_opts, "verif": verif_opts}
 
 
-def render_index_html(action="build.cgi") -> str:
-    """Render the form page: fill the option lists and the POST *action*."""
+def render_index_html(action="build") -> str:
+    """Render the form page: fill the option lists and the POST *action*.
+
+    *action* must stay a bare relative path (no leading slash): the page is
+    served through an httpd reverse proxy mounted at some path prefix (e.g.
+    ``/dag/``), and a leading slash would resolve against the site root
+    instead of that prefix.
+    """
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     opts = form_options_html()
     return (
@@ -294,7 +300,7 @@ def render_result_html(result: dict) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Output file serving (standalone server only; under CGI the web server does it)
+# Output file serving
 # --------------------------------------------------------------------------- #
 def safe_output_path(out_dir, name):
     """Resolve *name* under *out_dir*, or return None if it escapes / is missing.
@@ -312,63 +318,21 @@ def safe_output_path(out_dir, name):
 
 
 # --------------------------------------------------------------------------- #
-# CGI protocol
+# HTTP server (local testing and the production daemon alike)
 # --------------------------------------------------------------------------- #
 def _flatten(parsed):
     """parse_qs result (name -> [values]) -> name -> first value."""
     return {k: v[0] for k, v in parsed.items() if v}
 
 
-def serve_cgi(cfg, action="build.cgi", now_utc=None, stdin=None, stdout=None) -> int:
-    """Handle a single CGI request from the process environment.
-
-    On POST: parse the form, resolve, build, and emit the result HTML. On GET:
-    emit the form (handy if build.cgi is visited directly). Always returns 0 —
-    errors are shown in-page, not as HTTP failures, so the browser sees them.
-    """
-    stdin = stdin or sys.stdin.buffer
-    stdout = stdout or sys.stdout
-    method = os.environ.get("REQUEST_METHOD", "GET").upper()
-
-    if method != "POST":
-        _write_cgi(stdout, render_index_html(action=action))
-        return 0
-
-    try:
-        length = int(os.environ.get("CONTENT_LENGTH") or 0)
-    except ValueError:
-        length = 0
-    body = stdin.read(length) if length > 0 else b""
-    if isinstance(body, bytes):
-        body = body.decode("utf-8", errors="replace")
-    form = _flatten(parse_qs(body))
-
-    try:
-        target = resolve_params(form, cfg, now_utc=now_utc)
-        result = run_build(target, cfg)
-        page = render_result_html(result)
-    except (ValueError, timesel.NoDataYet) as e:
-        page = render_error_html(e)
-    except Exception as e:  # unexpected — log for the web server error log
-        logger.exception("Web build failed: %s", e)
-        page = render_error_html(f"Internal error: {e}")
-
-    _write_cgi(stdout, page)
-    return 0
+# matplotlib's pyplot interface (used by comparator.plotting/pipeline) keeps
+# global figure-manager state that isn't safe to touch from multiple threads
+# at once. ThreadingHTTPServer handles each request on its own thread, so
+# concurrent submissions serialize on this lock rather than risk corrupting
+# each other's in-progress figure.
+_BUILD_LOCK = threading.Lock()
 
 
-def _write_cgi(stdout, body):
-    """Emit a minimal CGI response (headers + body) to *stdout*."""
-    stdout.write("Content-Type: text/html; charset=utf-8\r\n")
-    stdout.write("Cache-Control: no-store\r\n")
-    stdout.write("\r\n")
-    stdout.write(body)
-    stdout.flush()
-
-
-# --------------------------------------------------------------------------- #
-# Standalone development server
-# --------------------------------------------------------------------------- #
 def _make_handler(cfg):
     class Handler(BaseHTTPRequestHandler):
         server_version = "ComparatorWeb/1.0"
@@ -388,7 +352,7 @@ def _make_handler(cfg):
         def do_GET(self):
             path = self.path.split("?", 1)[0]
             if path in ("/", "/index.html"):
-                self._send_html(render_index_html(action="/build"))
+                self._send_html(render_index_html(action="build"))
                 return
             if path.startswith("/output/"):
                 self._serve_output(path[len("/output/"):])
@@ -405,7 +369,8 @@ def _make_handler(cfg):
             form = _flatten(parse_qs(body))
             try:
                 target = resolve_params(form, cfg)
-                result = run_build(target, cfg)
+                with _BUILD_LOCK:
+                    result = run_build(target, cfg)
                 page = render_result_html(result)
             except (ValueError, timesel.NoDataYet) as e:
                 page = render_error_html(e)
@@ -450,7 +415,7 @@ def run_server(cfg, host="127.0.0.1", port=8000):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="compare-web",
-        description="On-demand web form for the NWP-vs-analysis comparator.",
+        description="Web form for the NWP-vs-analysis comparator.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -460,17 +425,20 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--out-dir", help="Figure/manifest output dir (overrides config)")
         p.add_argument("--log-dir", help="Log directory (overrides config)")
 
-    serve = sub.add_parser("serve", help="Run the standalone dev server (local testing).")
+    serve = sub.add_parser(
+        "serve",
+        help="Run the server (local testing, and the production daemon behind httpd).",
+    )
     add_common(serve)
     serve.add_argument("--host", default="127.0.0.1", help="Bind address (default 127.0.0.1).")
     serve.add_argument("--port", type=int, default=8000, help="Port (default 8000).")
 
-    cgi = sub.add_parser("cgi", help="Handle one CGI request (invoked by build.cgi).")
-    add_common(cgi)
-
-    rf = sub.add_parser("render-form", help="Print the static index.html for a CGI deploy.")
-    rf.add_argument("--action", default="build.cgi",
-                    help="Form POST target relative to the page (default build.cgi).")
+    rf = sub.add_parser(
+        "render-form",
+        help="Print the rendered index.html to stdout (for previewing template/registry changes).",
+    )
+    rf.add_argument("--action", default="build",
+                    help="Form POST target relative to the page (default build).")
 
     return parser
 
@@ -491,14 +459,12 @@ def main(argv=None) -> int:
         sys.stdout.write(render_index_html(action=args.action))
         return 0
 
-    # serve/cgi: log to stderr (under CGI this lands in the web server's error log).
+    # serve: log to stderr (cron/nohup redirects this to the daemon's logfile).
     logging.basicConfig(level=logging.INFO, stream=sys.stderr,
                         format="%(asctime)sZ %(levelname)s %(name)s: %(message)s",
                         datefmt="%Y-%m-%d %H:%M:%S")
     cfg = _load_cfg(args)
 
-    if args.command == "cgi":
-        return serve_cgi(cfg)
     if args.command == "serve":
         return run_server(cfg, host=args.host, port=args.port)
     return 2

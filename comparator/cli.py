@@ -70,6 +70,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--fxx", type=int, metavar="HH", help="single: forecast lead hour.")
     run.add_argument("--duration", type=int, default=500,
                      help="GIF frame duration in ms (default 500).")
+    run.add_argument("--workers", type=int, metavar="N",
+                     help="GIF render parallelism (default from config; 1 = "
+                          "sequential, lowest memory). Capped at 4.")
     run.add_argument("--dry-run", action="store_true",
                      help="Resolve and print the target; write nothing.")
     run.add_argument("--log-level", default="INFO",
@@ -169,7 +172,7 @@ def cmd_run(args) -> int:
     cfg = appconfig.load_config(
         config_path=args.config, data_dir=args.data_dir, out_dir=args.out_dir,
         log_dir=args.log_dir, verif=args.verif, lag_hours=args.lag,
-        default_lead=args.lead,
+        default_lead=args.lead, gif_workers=args.workers,
     )
 
     # Validate model/variable/verif up front (clear usage error, no work done).
@@ -233,6 +236,7 @@ def cmd_run(args) -> int:
         gif_path = pipeline.generate_gif(
             model_key, var_key, valid_dt, verif_key,
             data_dir=cfg.data_dir, out_dir=cfg.out_dir, duration=args.duration,
+            max_workers=cfg.gif_workers,
         )
         if gif_path is None:
             logger.warning("No GIF produced for %s %s %sZ.",

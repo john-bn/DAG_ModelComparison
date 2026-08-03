@@ -6,7 +6,7 @@ from comparator import appconfig
 
 DAG_ENV_VARS = [
     "DAG_CONFIG", "DAG_DATA_DIR", "DAG_OUT_DIR", "DAG_LOG_DIR",
-    "DAG_VERIF", "DAG_LAG_HOURS", "DAG_DEFAULT_LEAD",
+    "DAG_VERIF", "DAG_LAG_HOURS", "DAG_DEFAULT_LEAD", "DAG_GIF_WORKERS",
 ]
 
 
@@ -26,7 +26,20 @@ def test_builtin_defaults(isolated_env):
     assert cfg.verif == "rtma"
     assert cfg.lag_hours == 2
     assert cfg.default_lead == 24
+    assert cfg.gif_workers == 1  # sequential by default (low memory)
     assert cfg.manifest_path == cfg.out_dir / "runs.jsonl"
+
+
+def test_gif_workers_resolution(isolated_env, monkeypatch):
+    # file value used...
+    cfg_file = isolated_env / "config.yaml"
+    cfg_file.write_text("gif_workers: 3\n")
+    assert appconfig.load_config(config_path=str(cfg_file)).gif_workers == 3
+    # ...env overrides file...
+    monkeypatch.setenv("DAG_GIF_WORKERS", "2")
+    assert appconfig.load_config(config_path=str(cfg_file)).gif_workers == 2
+    # ...CLI overrides env; and a floor of 1 is enforced.
+    assert appconfig.load_config(config_path=str(cfg_file), gif_workers=0).gif_workers == 1
 
 
 def test_file_values_used(isolated_env):

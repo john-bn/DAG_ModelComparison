@@ -5,8 +5,9 @@
   comparator.webserver.render_index_html() substitutes four double-brace tokens:
     MODEL_OPTIONS / VAR_OPTIONS / VERIF_OPTIONS - option lists built from
       comparator.normalize so the dropdowns stay in sync with the registry.
-    ACTION - the form POST target ("/build" for the standalone dev server,
-      "build.cgi" for the CGI deployment).
+    ACTION - the form POST target: a bare relative path (default "build") so
+      it resolves correctly whether the page is loaded at the site root or
+      through an httpd reverse-proxy path prefix (e.g. /dag/).
 
   Everything is inline (no CDN/network assets) so it works on an air-gapped
   intranet server.

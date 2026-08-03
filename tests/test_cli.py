@@ -4,7 +4,7 @@ from comparator import cli
 
 DAG_ENV_VARS = [
     "DAG_CONFIG", "DAG_DATA_DIR", "DAG_OUT_DIR", "DAG_LOG_DIR",
-    "DAG_VERIF", "DAG_LAG_HOURS", "DAG_DEFAULT_LEAD",
+    "DAG_VERIF", "DAG_LAG_HOURS", "DAG_DEFAULT_LEAD", "DAG_GIF_WORKERS",
 ]
 
 
@@ -29,6 +29,14 @@ def test_parse_run_defaults():
 def test_parse_requires_model_and_var():
     with pytest.raises(SystemExit):
         cli.parse_args(["run", "--model", "hrrr"])
+
+
+def test_parse_workers_flag():
+    args = cli.parse_args(["run", "--model", "hrrr", "--var", "TMP", "--workers", "3"])
+    assert args.workers == 3
+    # Unset -> None so config/default wins.
+    args = cli.parse_args(["run", "--model", "hrrr", "--var", "TMP"])
+    assert args.workers is None
 
 
 # --- run --dry-run ----------------------------------------------------------

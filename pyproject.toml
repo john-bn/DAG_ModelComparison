@@ -19,6 +19,6 @@ compare-web = "comparator.webserver:main"
 include = ["comparator"]
 
 [tool.setuptools.package-data]
-# Ship the web form template + CGI helpers so an installed package can serve
-# the form and `render-form` can find the template.
-comparator = ["web/*.html", "web/*.cgi", "web/*.cgi.example"]
+# Ship the web form template so an installed package can serve the form and
+# `render-form` can find it.
+comparator = ["web/*.html"]

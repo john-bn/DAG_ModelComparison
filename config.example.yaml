@@ -3,10 +3,11 @@
 # Copy to config.yaml and edit. Resolution precedence (highest first):
 #   CLI flag  >  environment variable (DAG_*)  >  this file  >  built-in default
 #
-# On the server, set ABSOLUTE paths here — the CGI/web-server working directory
+# On the server, set ABSOLUTE paths here — the web-server working directory
 # may differ from the project, so relative paths would resolve to the wrong place.
-# For the web UI, point out_dir at the output/ subdir of your web-served
-# directory so rendered images are reachable (see docs/DEPLOYMENT.md).
+# The web daemon serves output/ itself (via reverse-proxied httpd), so out_dir
+# does not need to live inside any particular web-served directory — see
+# docs/DEPLOYMENT.md.
 
 # --- Directories (absolute paths recommended on the server) ---
 data_dir: /home/ACCU/john.needham/dag/data       # GRIB downloads + regridder weight cache
@@ -15,6 +16,13 @@ log_dir:  /home/ACCU/john.needham/dag/logs        # comparison.log (rotating)
 
 # --- Default verification analysis: rtma or urma ---
 verif: rtma
+
+# --- GIF render parallelism ---
+# 1 (default) renders frames sequentially in one process -> lowest memory, the
+# safe choice on a memory-constrained server. Raise it (capped at 4) only if the
+# box has RAM to spare; each extra worker is a full interpreter + scientific
+# stack + one forecast field.
+gif_workers: 1
 
 # --- Rolling real-time defaults (used by `compare run` without an explicit --date) ---
 rolling:

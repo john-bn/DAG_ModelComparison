@@ -1,4 +1,3 @@
-import io
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,7 +12,7 @@ def _cfg():
     base = Path(tempfile.mkdtemp())
     return appconfig.Config(
         data_dir=base / "data", out_dir=base / "figures", log_dir=base / "logs",
-        verif="rtma", lag_hours=2, default_lead=24,
+        verif="rtma", lag_hours=2, default_lead=24, gif_workers=1,
     )
 
 
@@ -32,12 +31,21 @@ def test_form_options_exclude_analysis_sources():
 
 
 def test_render_index_substitutes_all_tokens():
-    html = webserver.render_index_html(action="build.cgi")
-    assert 'action="build.cgi"' in html
+    html = webserver.render_index_html(action="build")
+    assert 'action="build"' in html
     assert '<option value="hrrr">HRRR</option>' in html
     assert '<option value="TMP">' in html
     # No template tokens left behind.
     assert "{{" not in html and "}}" not in html
+
+
+def test_render_index_default_action_is_relative():
+    # The page is served through an httpd reverse-proxy path prefix (e.g.
+    # /dag/); a leading slash in the form action would bypass that prefix and
+    # hit the site root instead, so the default must stay a bare relative path.
+    html = webserver.render_index_html()
+    assert 'action="build"' in html
+    assert 'action="/build"' not in html
 
 
 # --- resolve_params: the four target cases ---------------------------------
@@ -153,42 +161,3 @@ def test_render_result_error_escapes():
     html = webserver.render_result_html({"ok": False, "message": "<boom> & fail"})
     assert 'class="error"' in html
     assert "&lt;boom&gt;" in html  # escaped, not injected
-
-
-# --- CGI protocol -----------------------------------------------------------
-def test_cgi_post_runs_build(monkeypatch):
-    monkeypatch.setattr(webserver, "run_build", lambda target, cfg: {
-        "ok": True, "mode": "single", "filename": "x.png", "model": "hrrr",
-        "var": "TMP", "verif": "rtma", "valid_dt": datetime(2026, 6, 19, 12, 0),
-        "cycle_dt": datetime(2026, 6, 18, 12, 0), "fxx": 24,
-        "mean": 0.0, "rmse": 0.0, "n": 1,
-    })
-    body = "model=hrrr&var=TMP&verif=rtma&mode=single&target=specific&date=2026-06-18&init=12&fxx=24"
-    monkeypatch.setenv("REQUEST_METHOD", "POST")
-    monkeypatch.setenv("CONTENT_LENGTH", str(len(body)))
-    stdin = io.BytesIO(body.encode("utf-8"))
-    stdout = io.StringIO()
-    rc = webserver.serve_cgi(_cfg(), stdin=stdin, stdout=stdout)
-    out = stdout.getvalue()
-    assert rc == 0
-    assert "Content-Type: text/html" in out
-    assert '<img src="output/x.png"' in out
-
-
-def test_cgi_post_bad_input_shows_error(monkeypatch):
-    body = "model=bogus&var=TMP&mode=single&target=latest"
-    monkeypatch.setenv("REQUEST_METHOD", "POST")
-    monkeypatch.setenv("CONTENT_LENGTH", str(len(body)))
-    stdout = io.StringIO()
-    rc = webserver.serve_cgi(_cfg(), stdin=io.BytesIO(body.encode()), stdout=stdout)
-    assert rc == 0
-    assert 'class="error"' in stdout.getvalue()
-
-
-def test_cgi_get_serves_form(monkeypatch):
-    monkeypatch.setenv("REQUEST_METHOD", "GET")
-    stdout = io.StringIO()
-    webserver.serve_cgi(_cfg(), action="build.cgi", stdout=stdout)
-    out = stdout.getvalue()
-    assert "Content-Type: text/html" in out
-    assert 'action="build.cgi"' in out
