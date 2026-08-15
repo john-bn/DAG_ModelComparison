@@ -29,8 +29,6 @@ import os
 os.environ.setdefault("MPLBACKEND", "Agg")
 os.environ.pop("HERBIE_SAVE_DIR", None)
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote
@@ -40,7 +38,10 @@ import logging
 import sys
 import threading
 
-from comparator import appconfig, manifest, normalize, timesel
+from comparator import appconfig, normalize, runner, timesel
+# Re-exported: target resolution and the build itself are front-end-independent
+# and shared with the Streamlit app (see comparator.runner).
+from comparator.runner import ResolvedTarget, run_build
 
 logger = logging.getLogger("comparator.webserver")
 
@@ -50,161 +51,31 @@ _CONTENT_TYPES = {".png": "image/png", ".gif": "image/gif"}
 
 
 # --------------------------------------------------------------------------- #
-# Resolved target
+# Form → target resolution
 # --------------------------------------------------------------------------- #
-@dataclass(frozen=True)
-class ResolvedTarget:
-    """A validated, fully-resolved comparison request.
-
-    ``cycle_dt``/``fxx`` are ``None`` for GIF mode (which spans every covering
-    cycle); ``valid_dt`` is always set.
-    """
-
-    model_key: str
-    var_key: str
-    verif_key: str
-    mode: str            # "single" | "gif"
-    cycle_dt: datetime | None
-    fxx: int | None
-    valid_dt: datetime
-
-
-# --------------------------------------------------------------------------- #
-# Form → target resolution (mirrors cli._resolve_target, reuses public timesel)
-# --------------------------------------------------------------------------- #
-def _require(form, key, label):
-    value = (form.get(key) or "").strip()
-    if not value:
-        raise ValueError(f"Missing required field: {label}.")
-    return value
-
-
-def _parse_int(value, label):
-    try:
-        return int(str(value).strip())
-    except (TypeError, ValueError):
-        raise ValueError(f"{label} must be a whole number (got {value!r}).")
-
-
 def resolve_params(form, cfg, now_utc=None) -> ResolvedTarget:
     """Validate a submitted *form* dict and resolve the run target.
 
-    *form* maps field name -> single string value. *now_utc* is injected for
+    *form* maps field name -> single string value; this is the HTML-form
+    adapter over :func:`comparator.runner.resolve_target`, which does the
+    validation and the actual resolving. *now_utc* is injected for
     determinism/testability (defaults to the real current UTC time). Raises
     :class:`ValueError` on any invalid/missing input (the caller turns that into
     a friendly error panel) and :class:`timesel.NoDataYet` when a rolling target
     has no covering cycle yet.
     """
-    if now_utc is None:
-        now_utc = datetime.now(timezone.utc)
-
-    model_key = normalize.normalize_model_key(_require(form, "model", "Model"))
-    var_key = normalize.normalize_var_key(_require(form, "var", "Variable"))
-    verif_key = normalize.normalize_verif_key(
-        (form.get("verif") or cfg.verif or "").strip() or cfg.verif
+    return runner.resolve_target(
+        model=form.get("model"),
+        var=form.get("var"),
+        verif=form.get("verif"),
+        mode=form.get("mode") or "single",
+        target=form.get("target") or "latest",
+        date=form.get("date"),
+        init=form.get("init"),
+        fxx=form.get("fxx"),
+        cfg=cfg,
+        now_utc=now_utc,
     )
-
-    mode = (form.get("mode") or "single").strip().lower()
-    if mode not in ("single", "gif"):
-        raise ValueError(f"Invalid mode: {mode!r} (expected 'single' or 'gif').")
-
-    target = (form.get("target") or "latest").strip().lower()
-    if target not in ("latest", "specific"):
-        raise ValueError(f"Invalid target: {target!r} (expected 'latest' or 'specific').")
-
-    common = dict(model_key=model_key, var_key=var_key, verif_key=verif_key, mode=mode)
-
-    if target == "specific":
-        date = _require(form, "date", "Date")
-        init = _parse_int(_require(form, "init", "Init hour"), "Init hour")
-        if not 0 <= init <= 23:
-            raise ValueError("Init hour must be between 0 and 23 (Z-time).")
-        try:
-            anchor = datetime.fromisoformat(f"{date} {init:02d}:00")
-        except ValueError:
-            raise ValueError(f"Invalid date {date!r} (expected YYYY-MM-DD).")
-
-        if mode == "single":
-            fxx = _parse_int(_require(form, "fxx", "Forecast lead"), "Forecast lead")
-            if fxx < 0:
-                raise ValueError("Forecast lead must be 0 or greater.")
-            valid_dt = anchor + timedelta(hours=fxx)
-            return ResolvedTarget(**common, cycle_dt=anchor, fxx=fxx, valid_dt=valid_dt)
-        # gif: date/init describe the analysis VALID time
-        return ResolvedTarget(**common, cycle_dt=None, fxx=None, valid_dt=anchor)
-
-    # Rolling "most recent available".
-    if mode == "single":
-        cycle_dt, fxx, valid_dt = timesel.resolve_rolling_target(
-            model_key, now_utc, lag_hours=cfg.lag_hours, lead_hours=cfg.default_lead,
-        )
-        return ResolvedTarget(**common, cycle_dt=cycle_dt, fxx=fxx, valid_dt=valid_dt)
-
-    valid_dt = timesel.floor_to_hour(now_utc.replace(tzinfo=None)) - timedelta(hours=cfg.lag_hours)
-    return ResolvedTarget(**common, cycle_dt=None, fxx=None, valid_dt=valid_dt)
-
-
-# --------------------------------------------------------------------------- #
-# Build (downloads GRIB2 + renders the image) — heavy import deferred
-# --------------------------------------------------------------------------- #
-def run_build(target: ResolvedTarget, cfg) -> dict:
-    """Download data and render the comparison for *target*.
-
-    Returns a result dict consumed by :func:`render_result_html`:
-        {"ok": True, "filename": ..., "valid_dt": ..., ["cycle_dt", "fxx",
-         "mean", "rmse", "n"]}
-    or {"ok": False, "message": ...} when nothing could be produced.
-    Appends a manifest record on success so ``compare list`` also shows
-    web-built runs.
-    """
-    from comparator import pipeline  # heavy scientific stack, deferred
-
-    ts = datetime.now(timezone.utc).replace(tzinfo=None)  # naive UTC, uniform manifest
-
-    if target.mode == "single":
-        result = pipeline.generate_comparison_frame(
-            target.model_key, target.var_key, target.cycle_dt, target.fxx,
-            target.verif_key, data_dir=cfg.data_dir, out_dir=cfg.out_dir,
-        )
-        if result is None:
-            return {"ok": False, "message": (
-                f"No {target.verif_key.upper()} / {target.model_key.upper()} data "
-                f"available yet for valid {target.valid_dt:%Y-%m-%d %H}Z. "
-                "The target may be too recent — try again shortly."
-            )}
-        manifest.append(cfg.manifest_path, manifest.make_record(
-            ts_utc=ts, model=target.model_key, var=target.var_key,
-            verif=target.verif_key, mode="single", path=result.path,
-            cycle_dt=target.cycle_dt, fxx=target.fxx, valid_dt=target.valid_dt,
-            mean=result.mean, rmse=result.rmse, n=result.n,
-        ))
-        return {
-            "ok": True, "mode": "single", "filename": Path(result.path).name,
-            "model": target.model_key, "var": target.var_key,
-            "verif": target.verif_key, "valid_dt": target.valid_dt,
-            "cycle_dt": target.cycle_dt, "fxx": target.fxx,
-            "mean": result.mean, "rmse": result.rmse, "n": result.n,
-        }
-
-    gif_path = pipeline.generate_gif(
-        target.model_key, target.var_key, target.valid_dt, target.verif_key,
-        data_dir=cfg.data_dir, out_dir=cfg.out_dir, max_workers=cfg.gif_workers,
-    )
-    if gif_path is None:
-        return {"ok": False, "message": (
-            f"No {target.model_key.upper()} runs cover the "
-            f"{target.verif_key.upper()} analysis at "
-            f"{target.valid_dt:%Y-%m-%d %H}Z, or no frames could be built."
-        )}
-    manifest.append(cfg.manifest_path, manifest.make_record(
-        ts_utc=ts, model=target.model_key, var=target.var_key,
-        verif=target.verif_key, mode="gif", path=gif_path, valid_dt=target.valid_dt,
-    ))
-    return {
-        "ok": True, "mode": "gif", "filename": Path(gif_path).name,
-        "model": target.model_key, "var": target.var_key,
-        "verif": target.verif_key, "valid_dt": target.valid_dt,
-    }
 
 
 # --------------------------------------------------------------------------- #
@@ -217,8 +88,7 @@ def form_options_html():
     (rtma/urma) are excluded from the model list — they are verification
     sources, not forecast models.
     """
-    models = [k for k in normalize.MODEL_REGISTRY
-              if k not in normalize.VERIFICATION_SOURCES]
+    models = normalize.forecast_models()
     model_opts = "".join(
         f'<option value="{html.escape(k)}">{html.escape(k.upper())}</option>'
         for k in models

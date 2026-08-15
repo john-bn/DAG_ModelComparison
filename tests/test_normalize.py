@@ -5,6 +5,9 @@ from comparator.normalize import (
     MODEL_REGISTRY,
     VAR_REGISTRY,
     VERIFICATION_SOURCES,
+    find_runs_for_valid_time,
+    forecast_models,
+    max_fxx_for_cycle,
     normalize_model_key,
     normalize_verif_key,
     herbie_kwargs_for,
@@ -13,6 +16,8 @@ from comparator.normalize import (
     resolve_field_da,
     get_selector,
     get_xarray_kwargs,
+    valid_forecast_hours,
+    valid_init_hours,
     wrap_longitude,
     ensure_dataset,
 )
@@ -289,6 +294,60 @@ def test_resolve_field_da_wind_raises_without_components():
     with pytest.raises(ValueError) as e:
         resolve_field_da(ds, "WIND")
     assert "no direct speed field" in str(e.value)
+
+
+# --- menu building: only offer runs the model actually produces -------------
+def test_forecast_models_excludes_analysis_sources():
+    models = forecast_models()
+    assert "hrrr" in models and "gfs" in models
+    for src in VERIFICATION_SOURCES:
+        assert src not in models
+
+
+def test_valid_init_hours_follows_cycle_interval():
+    assert valid_init_hours("hrrr") == list(range(24))       # hourly
+    assert valid_init_hours("gfs") == [0, 6, 12, 18]         # 4x/day
+    assert valid_init_hours("href") == [0, 12]               # 2x/day
+
+
+def test_max_fxx_for_cycle_honors_extended_cycles():
+    # HRRR reaches F48 from 00/06/12/18Z, but only F18 from the other hours.
+    assert max_fxx_for_cycle("hrrr", 12) == 48
+    assert max_fxx_for_cycle("hrrr", 13) == 18
+    # RAP's long runs are on 03/09/15/21Z instead.
+    assert max_fxx_for_cycle("rap", 3) == 51
+    assert max_fxx_for_cycle("rap", 4) == 21
+    # A model with one range everywhere.
+    assert max_fxx_for_cycle("gfs", 0) == max_fxx_for_cycle("gfs", 18) == 384
+
+
+def test_valid_forecast_hours_spans_zero_to_max():
+    leads = valid_forecast_hours("hrrr", 13)
+    assert leads[0] == 0 and leads[-1] == 18
+    assert len(leads) == 19
+
+
+def test_menu_helpers_reject_unknown_model():
+    for call in (lambda: valid_init_hours("bogus"),
+                 lambda: max_fxx_for_cycle("bogus", 0),
+                 lambda: valid_forecast_hours("bogus", 0)):
+        with pytest.raises(ValueError) as e:
+            call()
+        assert "No forecast metadata" in str(e.value)
+
+
+def test_find_runs_agrees_with_max_fxx_for_cycle():
+    """Every (cycle, lead) offered must be one that cycle actually reaches."""
+    import datetime as dt
+
+    valid = dt.datetime(2026, 6, 18, 13, 0)
+    for model in ("hrrr", "rap", "gfs", "href"):
+        runs = find_runs_for_valid_time(model, valid)
+        assert runs, f"{model} should have covering runs"
+        for cycle_dt, fxx in runs:
+            assert cycle_dt.hour in valid_init_hours(model)
+            assert fxx <= max_fxx_for_cycle(model, cycle_dt.hour)
+            assert cycle_dt + dt.timedelta(hours=fxx) == valid
 
 
 def test_get_selector_wind_gust_fallback_and_maps():

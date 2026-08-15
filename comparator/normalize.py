@@ -115,6 +115,51 @@ MODEL_FORECAST_META = {
 }
 
 
+def _forecast_meta(model_key: str) -> dict:
+    """Return the forecast-range metadata for *model_key* (raises if unknown)."""
+    meta = MODEL_FORECAST_META.get(model_key)
+    if meta is None:
+        raise ValueError(
+            f"No forecast metadata for model '{model_key}'. "
+            f"Known models: {', '.join(MODEL_FORECAST_META)}"
+        )
+    return meta
+
+
+def forecast_models() -> list[str]:
+    """Registry keys that are forecast models, i.e. everything but the analyses.
+
+    RTMA/URMA live in MODEL_REGISTRY so Herbie kwargs and selectors resolve for
+    them, but they are verification *sources* — never a "which NWP model?"
+    answer — so the front ends build their model menus from this list.
+    """
+    return [k for k in MODEL_REGISTRY if k not in VERIFICATION_SOURCES]
+
+
+def valid_init_hours(model_key: str) -> list[int]:
+    """Init cycle hours (Z) *model_key* actually runs, e.g. GFS → 0, 6, 12, 18."""
+    return list(range(0, 24, _forecast_meta(model_key)["cycle_interval"]))
+
+
+def max_fxx_for_cycle(model_key: str, init_hour: int) -> int:
+    """Longest forecast hour the *init_hour* cycle of *model_key* produces.
+
+    Models whose long runs are limited to certain cycles (HRRR reaches F48 from
+    00/06/12/18Z but only F18 from the other hours) report the shorter range for
+    every other cycle.
+    """
+    meta = _forecast_meta(model_key)
+    extended = meta.get("extended_cycles")
+    if extended is None or init_hour in extended:
+        return meta["max_fxx"]
+    return meta.get("base_max_fxx", meta["max_fxx"])
+
+
+def valid_forecast_hours(model_key: str, init_hour: int) -> list[int]:
+    """Forecast leads available from the *init_hour* cycle of *model_key*."""
+    return list(range(0, max_fxx_for_cycle(model_key, init_hour) + 1))
+
+
 def find_runs_for_valid_time(model_key: str, valid_dt) -> list[tuple]:
     """Return every (cycle_dt, fxx) pair whose forecast covers *valid_dt*.
 
@@ -123,32 +168,19 @@ def find_runs_for_valid_time(model_key: str, valid_dt) -> list[tuple]:
     """
     from datetime import timedelta
 
-    meta = MODEL_FORECAST_META.get(model_key)
-    if meta is None:
-        raise ValueError(
-            f"No forecast metadata for model '{model_key}'. "
-            f"Known models: {', '.join(MODEL_FORECAST_META)}"
-        )
-
+    meta = _forecast_meta(model_key)
     interval = meta["cycle_interval"]
     global_max = meta["max_fxx"]
-    extended_cycles = meta.get("extended_cycles")
-    base_max = meta.get("base_max_fxx", global_max)
 
     results = []
     for hours_back in range(0, global_max + 1):
         candidate = valid_dt - timedelta(hours=hours_back)
-        # Only keep cycles that land on a valid init hour
+        # Only keep cycles that land on a valid init hour, and leads this
+        # particular cycle actually reaches.
         if candidate.hour % interval != 0:
             continue
-        fxx = hours_back
-        # Determine the max forecast hour for this specific cycle
-        if extended_cycles is not None:
-            cycle_max = global_max if candidate.hour in extended_cycles else base_max
-        else:
-            cycle_max = global_max
-        if fxx <= cycle_max:
-            results.append((candidate, fxx))
+        if hours_back <= max_fxx_for_cycle(model_key, candidate.hour):
+            results.append((candidate, hours_back))
 
     # Oldest init first → GIF animates from long-range to short-range
     results.sort(key=lambda pair: pair[0])

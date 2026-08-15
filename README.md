@@ -2,13 +2,38 @@
 
 This program uses Herbie to fetch temperature, dewpoint, visibility, 10 m wind speed, & wind gust fields from the HRRR, NAM, NBM, GFS, & other models run at NCEP, verified against either the RTMA or URMA analysis. The analysis is regridded onto the model grid with a lightweight SciPy KDTree (k-nearest inverse-distance) regridder. MatPlotLib & Cartopy are then used to plot the data in a map. Wind speed is derived from the model's U/V components when no direct wind-speed field is published.
 
-The driver file is new_comparison.py. The program is run by following;
+## Streamlit app (`new_comparison.py`)
 
-Select a model prompted by the command line output, (i.e, HRRR)
-Then, a valid field to analyze. (i.e, temperature)
-Then, the verification analysis source, (i.e, RTMA or URMA)
-Then, a valid initiliazation hour, (i.e, 00)
-Then, a valid forecast hour, (i.e, 24)
+The driver file is `new_comparison.py`, a Streamlit page. Start it either way —
+the second form relaunches itself under Streamlit — and open the URL it prints
+(http://localhost:8501 by default):
+
+```
+streamlit run new_comparison.py
+python new_comparison.py
+```
+
+Everything is chosen from drop-down menus in the sidebar:
+
+* **NWP model** — HRRR, NAM5k, NAM12k, RAP, NBM, ARW, FV3, GFS, IFS, HREF
+* **Field** — TMP (2 m temperature), DPT (2 m dew point), VIS, WIND (10 m), GUST
+* **Verify against** — RTMA or URMA
+* **Output** — a single frame (PNG), or an animated GIF of every run covering
+  the valid time
+* **Valid time** — the most recent analysis available, or a specific one
+
+The time menus only offer runs the model actually produces: GFS lists just its
+00/06/12/18Z cycles, an HRRR 03Z cycle stops at F018 while the 00Z cycle runs
+out to F048, and picking a valid time lists exactly the forecast runs that reach
+it. Prefer to think in cycles instead? Switch **Specify by** to *Init + lead*
+and each lead is labelled with the valid time it lands on.
+
+Click **Build comparison** and the GRIB2 files are downloaded and the figure
+rendered right then, with the engine's progress streaming into the page. The
+result is displayed in the page with a **Download** button, the mean error /
+RMSE / grid-point count, and an expander listing recent runs from the manifest.
+Where the downloads, figures, and logs land is set by `config.yaml` / `DAG_*`
+env vars, exactly as for the CLI (see [Configuration](#configuration)).
 
 As the data is downloaded from NOMADS & AWS, no special permissions are required.
 Data are downloaded automatically via Herbie and cached locally in ./data/.
@@ -55,14 +80,14 @@ order
 appends a record (incl. mean / RMSE error stats) to `<out_dir>/runs.jsonl` and
 logs to `<log_dir>/comparison.log`.
 
-## Web UI (`compare-web`)
+## Intranet web UI (`compare-web`)
 
-Instead of a scheduled job, comparisons are triggered **on demand** from an HTML
-form: pick a model, variable, verification source, mode (single frame or GIF),
-and target time, click **Build comparison**, and the server downloads the GRIB2
-files and renders the image right then. It drives the same engine as the CLI and
-appends to the same `runs.jsonl` manifest, so `compare list` still sees web
-builds.
+The Streamlit app is the front end to reach for locally. `compare-web` is the
+same on-demand form built on nothing but the standard library, for the intranet
+server, where the deployment is a cron-supervised daemon behind an Apache httpd
+reverse proxy (see below). Both share their validation, target resolution, and
+build with the CLI (`comparator.runner`), and append to the same `runs.jsonl`
+manifest, so `compare list` sees every build regardless of which one made it.
 
 Run it locally (no extra dependencies — pure standard library):
 
@@ -86,6 +111,6 @@ installing the daemon + cron supervision, and the httpd proxy config) is in
 **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**, with the deployable scripts and
 config in **[deploy/](deploy/)**.
 
-The manual entry points still work unchanged and share the same engine — the
-interactive `python new_comparison.py` and the non-interactive
+The other entry points share that same engine — the Streamlit app
+(`streamlit run new_comparison.py`) and the non-interactive
 `compare run | list | latest` (see above).

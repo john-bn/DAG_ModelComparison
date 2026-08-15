@@ -22,9 +22,11 @@ from pathlib import Path
 import argparse
 import logging
 import sys
-import time
 
 from comparator import appconfig, manifest, normalize, timesel
+# Shared with the other front ends (and re-exported here, since the deployment
+# scripts and tests reach for cli.setup_logging).
+from comparator.runner import setup_logging
 
 logger = logging.getLogger("comparator")
 
@@ -104,33 +106,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def parse_args(argv=None):
     return build_parser().parse_args(argv)
-
-
-# --------------------------------------------------------------------------- #
-# Logging
-# --------------------------------------------------------------------------- #
-def setup_logging(cfg, level="INFO"):
-    """Configure root logging to a rotating file + stderr, timestamped in UTC."""
-    from logging.handlers import RotatingFileHandler
-
-    cfg.log_dir.mkdir(parents=True, exist_ok=True)
-    root = logging.getLogger()
-    root.setLevel(getattr(logging, str(level).upper(), logging.INFO))
-    # Avoid duplicate handlers if called twice in one process.
-    for h in list(root.handlers):
-        root.removeHandler(h)
-
-    fmt = logging.Formatter("%(asctime)sZ %(levelname)s %(name)s: %(message)s",
-                            datefmt="%Y-%m-%d %H:%M:%S")
-    fmt.converter = time.gmtime  # UTC timestamps
-
-    fh = RotatingFileHandler(cfg.log_path, maxBytes=5_000_000, backupCount=5)
-    fh.setFormatter(fmt)
-    root.addHandler(fh)
-
-    sh = logging.StreamHandler(sys.stderr)
-    sh.setFormatter(fmt)
-    root.addHandler(sh)
 
 
 # --------------------------------------------------------------------------- #

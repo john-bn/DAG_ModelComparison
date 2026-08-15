@@ -27,6 +27,9 @@ htmlcov/
 # Local config
 config.yaml
 
+# TOML
+*.toml
+
 # Data and outputs
 data/
 figures/

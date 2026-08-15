@@ -11,8 +11,9 @@ dependencies:
   - metpy=1.7.1
   - pyproj=3.7.2
   - pyyaml
-  - pytest  
+  - pytest
   - pandas<3.0
-  - cartopy 
+  - cartopy
   - herbie-data
   - jupyterlab
+  - streamlit
