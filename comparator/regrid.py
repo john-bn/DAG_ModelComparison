@@ -19,7 +19,7 @@ cheaply to a ``.npz`` for reuse across frames and runs.
 from pathlib import Path
 
 import numpy as np
-from scipy.spatial import KDTree
+from scipy.spatial import cKDTree
 
 
 def _to_2d_lonlat(lon, lat):
