@@ -61,17 +61,17 @@ MODEL_REGISTRY = {
         "aliases": ["gfs"],
         "kwargs": {"model": "gfs", "product": "pgrb2.0p25"},
     },
-    "ifs": {
-        "aliases": ["ifs", "ecmwf"],
-        "kwargs": {"model": "ifs", "product": "oper"},
-        "selector_map": {
-            "TMP": ":2t:",
-            "DPT": ":2d:",
-            "VIS": ":vis:",
-            "WIND": r":(?:10si|10u|10v):",
-            "GUST": r":(?:i10fg|10fg):",
-        },
-    },
+    #"ifs": {
+    #    "aliases": ["ifs", "ecmwf"],
+    #    "kwargs": {"model": "ifs", "product": "oper"},
+    #    "selector_map": {
+    #        "TMP": ":2t:",
+    #        "DPT": ":2d:",
+    #        "VIS": ":vis:",
+    #        "WIND": r":(?:10si|10u|10v):",
+    #        "GUST": r":(?:i10fg|10fg):",
+    #    },
+    #},
     "rtma": {
         "aliases": ["rtma"],
         "kwargs": {"model": "rtma", "product": "anl"},
@@ -111,7 +111,7 @@ MODEL_FORECAST_META = {
     "fv3": {"cycle_interval": 12, "max_fxx": 48},
     "href": {"cycle_interval": 12, "max_fxx": 48},
     "gfs": {"cycle_interval": 6, "max_fxx": 384},
-    "ifs": {"cycle_interval": 12, "max_fxx": 240},
+    #"ifs": {"cycle_interval": 12, "max_fxx": 240},
 }
 
 
