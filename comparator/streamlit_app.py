@@ -42,8 +42,8 @@ RESULT_KEY = "last_result"
 MIME_TYPES = {".png": "image/png", ".gif": "image/gif"}
 
 MODE_LABELS = {
-    "single": "Single frame (PNG)",
-    "gif": "Animated GIF (every run)",
+    "single": "Single frame",
+    "gif": "Animated GIF",
 }
 TARGET_LABELS = {
     "latest": "Most recent available",
@@ -51,7 +51,7 @@ TARGET_LABELS = {
 }
 ANCHOR_LABELS = {
     "valid": "Valid time",
-    "cycle": "Init + lead",
+    "cycle": "Initialization Time + Lead Time",
 }
 
 # matplotlib's pyplot interface keeps global figure-manager state that is not

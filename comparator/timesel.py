@@ -21,7 +21,7 @@ from comparator import normalize
 
 # Hours to subtract from "now" before picking an analysis time. Covers RTMA/URMA
 # publication latency so the analysis file is on disk by the time we ask for it.
-DEFAULT_LAG_HOURS = 2
+DEFAULT_LAG_HOURS = 1
 
 # Forecast lead time (hours) we verify by default. The run closest to this lead
 # is chosen among all cycles covering the analysis time.
