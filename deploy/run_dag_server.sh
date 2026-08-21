@@ -10,14 +10,12 @@ set -euo pipefail
 
 # --- EDIT THESE for your server --------------------------------------------
 REPO_DIR="/home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute"
-# micromamba env activation. Cron runs with a minimal environment and does NOT
-# source ~/.bashrc, so the `micromamba` shell function and MAMBA_ROOT_PREFIX
-# that an interactive login sets up are NOT available here — we recreate them
-# explicitly below. Fill these in from a normal shell with:
-#   which micromamba ; echo "$MAMBA_ROOT_PREFIX" ; micromamba env list
-MICROMAMBA="$HOME/.local/bin/micromamba"     # absolute path to the binary
-export MAMBA_ROOT_PREFIX="$HOME/micromamba"  # root prefix that holds your envs
-ENV_NAME="rtc"                               # the env's name (from `env list`)
+# pixi env activation. Cron runs with a minimal environment and does NOT source
+# ~/.bashrc, so the PATH entry an interactive login gets (~/.pixi/bin) is NOT
+# available here — spell the binary out absolutely. Find it from a normal shell
+# with `which pixi`; list the environment names with `pixi info`.
+PIXI="$HOME/.pixi/bin/pixi"   # absolute path to the pixi binary
+PIXI_ENV="default"            # from [tool.pixi.environments] in pyproject.toml
 DAG_CONFIG="$REPO_DIR/config.yaml"
 PORT=8000
 # ---------------------------------------------------------------------------
@@ -38,19 +36,22 @@ export MPLBACKEND=Agg
 unset HERBIE_SAVE_DIR || true
 export DAG_CONFIG
 
-# Activate the env the micromamba way. This runs the env's activate.d hooks
-# (they set GDAL_DATA/PROJ_LIB, which cartopy/pyproj need) — bypassing them by
-# calling the env's python directly would break projection lookups. We init the
-# shell hook from the absolute binary so it works identically under cron, and
-# activate rather than `micromamba run` so the backgrounded python stays the
-# direct child: $! below is then the server's own PID, keeping the pidfile /
-# watchdog / restart logic exact. `set +u` guards the hook, which may reference
-# unset shell vars (e.g. PS1); it's restored right after.
-set +u
-eval "$("$MICROMAMBA" shell hook -s bash)"
-micromamba activate "$ENV_NAME"
-set -u
+# Activate the env the pixi way. `pixi shell-hook` prints the same activation
+# script `pixi shell` would source, including the env's etc/conda/activate.d
+# hooks. The one that matters here is proj4-activate.sh, which points PROJ_DATA
+# at the env's own share/proj and sets PROJ_NETWORK=OFF — pyproj and cartopy
+# resolve projections through that, and it also overrides any stale PROJ_DATA
+# inherited from another install. We eval the hook rather than wrapping the server in
+# `pixi run` because `pixi run` would sit between this script and python: $!
+# below must be the server's own PID for the pidfile / watchdog / restart logic
+# to stay exact. `--frozen` installs strictly from pixi.lock, so a boot-time
+# start never blocks on a network re-solve. `set +u` guards the hook, which may
+# reference unset shell vars (e.g. PS1); it's restored right after.
+# We cd first so pixi discovers the manifest in the repo root.
 cd "$REPO_DIR"
+set +u
+eval "$("$PIXI" shell-hook --frozen -e "$PIXI_ENV")"
+set -u
 
 nohup python -m comparator.webserver serve --host 127.0.0.1 --port "$PORT" \
     >> "$LOGFILE" 2>&1 &

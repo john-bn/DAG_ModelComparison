@@ -7,8 +7,8 @@ __pycache__/
 .venv/
 venv/
 
-# Conda
-.conda/
+# pixi — the solved environments are rebuilt from pixi.lock, which IS committed
+.pixi/
 
 # macOS
 .DS_Store
@@ -29,6 +29,8 @@ config.yaml
 
 # TOML
 *.toml
+# ...but pyproject.toml carries the project + pixi config and must be tracked.
+!pyproject.toml
 
 # Data and outputs
 data/

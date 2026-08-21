@@ -5,10 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "comparator"
 version = "0.0.0"
-requires-python = ">3.11"
-# Only the pure-Python deps are declared here. The heavy scientific stack
-# (herbie, xesmf/esmf, cartopy, metpy, xarray, ...) is provided by the conda
-# environment in environment.yml — do not try to pip-install it.
+requires-python = ">=3.11"
+# Only the pure-Python deps are declared here, so that `pip install -e .` still
+# produces a working package inside an environment that already has the
+# scientific stack. The stack itself is resolved by pixi from conda-forge — see
+# [tool.pixi.dependencies] below — because the native libraries behind
+# cartopy/pyproj/cfgrib (GEOS, PROJ, ecCodes) are solved there as real packages
+# rather than vendored inside wheels.
 dependencies = ["pyyaml"]
 
 [project.scripts]
@@ -22,3 +25,73 @@ include = ["comparator"]
 # Ship the web form template so an installed package can serve the form and
 # `render-form` can find it.
 comparator = ["web/*.html"]
+
+# ---------------------------------------------------------------------------
+# pixi (https://pixi.sh) — replaces the old conda/micromamba environment.yml.
+#
+# Why pixi rather than a pip/uv-only setup: cartopy, pyproj and cfgrib are thin
+# Python layers over C/C++ libraries. conda-forge ships GEOS, PROJ and ecCodes
+# as first-class packages the solver reasons about, so they are resolved rather
+# than taken on faith from whatever a wheel happens to vendor. It also keeps
+# linux-aarch64 buildable (cartopy publishes no manylinux aarch64 wheel).
+#
+# Config lives here rather than in a separate pixi.toml because .gitignore has a
+# blanket `*.toml` rule that would silently ignore a new top-level pixi.toml.
+#
+# Requires pixi >= 0.41 (the [tool.pixi.workspace] table; earlier versions
+# called it [tool.pixi.project]).
+# ---------------------------------------------------------------------------
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+# osx-arm64 = developer laptops, linux-64 = the intranet daemon host. Adding a
+# platform here and re-running `pixi install` extends pixi.lock to cover it.
+platforms = ["osx-arm64", "linux-64"]
+
+[tool.pixi.dependencies]
+# Version pins carried over verbatim from the old environment.yml so the solved
+# environment matches the one already validated in production. Now that
+# pixi.lock pins exact builds and hashes, these can be loosened to real
+# constraints (e.g. `numpy = ">=2.3,<3"`) without losing reproducibility.
+python = "3.11.14.*"
+xarray = "2025.12.0.*"
+numpy = "2.3.5.*"
+scipy = "*"
+matplotlib = "3.10.8.*"
+pyproj = "3.7.2.*"
+pandas = "<3.0"
+pyyaml = "*"
+cartopy = "*"
+herbie-data = "*"
+streamlit = "*"
+# Imported directly by comparator/build_gif.py (`from PIL import Image`). It
+# used to arrive only as a transitive dep of matplotlib; declared explicitly
+# because the code depends on it by name.
+pillow = "*"
+
+[tool.pixi.pypi-dependencies]
+# Editable install of this repo, so `compare` and `compare-web` land on PATH.
+# The web daemon deliberately starts via `python -m comparator.webserver`
+# instead (see deploy/run_dag_server.sh), so it keeps working even where this
+# build step cannot run.
+comparator = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+app = { cmd = "streamlit run new_comparison.py", description = "Run the Streamlit UI" }
+serve = { cmd = "compare-web serve", description = "Run the intranet web daemon in the foreground" }
+
+# Dev-only tooling, kept out of the default environment so the deployment host
+# does not install jupyterlab and pytest.
+[tool.pixi.feature.dev.dependencies]
+pytest = "*"
+jupyterlab = "*"
+
+[tool.pixi.feature.dev.tasks]
+test = { cmd = "pytest", description = "Run the test suite" }
+lab = { cmd = "jupyter lab", description = "Open JupyterLab" }
+
+[tool.pixi.environments]
+# Both environments share one solve group, so dev and default resolve to
+# identical versions of the shared packages instead of drifting apart.
+default = { solve-group = "main" }
+dev = { features = ["dev"], solve-group = "main" }

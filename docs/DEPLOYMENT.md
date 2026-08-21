@@ -5,7 +5,7 @@ verification source, mode, and target time, clicks **Build comparison**, and
 the server downloads the GRIB2 files on demand and renders the image.
 
 The server (`compare-web serve`) is a **long-running daemon**, not a
-per-request CGI script: the conda env activation and the scientific-stack
+per-request CGI script: the environment activation and the scientific-stack
 imports (matplotlib/cartopy/scipy) happen once at startup, not on every
 click. Apache httpd is configured as a **reverse proxy** — it forwards a URL
 path prefix to the daemon over loopback and does nothing scientific-stack
@@ -28,45 +28,75 @@ Browser ──GET/POST─▶ https://fcinet.accuweather.com/<path>/dag/
 
 ## 1. Get the Python environment onto the server
 
-The scientific stack (herbie, scipy, cartopy, matplotlib, metpy, pyproj, …) is
-declared in `environment.yml`. Build it directly on the server with
-**micromamba**, which creates the env under `$MAMBA_ROOT_PREFIX/envs/`:
+The scientific stack (herbie, scipy, cartopy, matplotlib, pyproj, …) is declared
+in `[tool.pixi.dependencies]` in `pyproject.toml`, with exact builds and hashes
+pinned in the committed `pixi.lock`. Install **pixi** once, then build the
+environment from the lock:
 
 ```bash
-micromamba create -f environment.yml -n new_comparator
+curl -fsSL https://pixi.sh/install.sh | bash     # installs to ~/.pixi/bin
+cd /home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute
+pixi install --frozen --environment default
 ```
 
-The env name (`new_comparator`) and the root prefix (`$MAMBA_ROOT_PREFIX`, e.g.
-`~/micromamba`) you use here are exactly the `ENV_NAME` and `MAMBA_ROOT_PREFIX`
-values set in `deploy/run_dag_server.sh` (§3) — keep the two in sync.
+`--frozen` installs strictly what `pixi.lock` specifies, with no re-solve, so the
+server gets byte-identical packages to the ones tested. The environment lands in
+`.pixi/envs/default/` inside the repo — no separate env root to keep track of,
+and nothing outside the checkout to clean up. `default` deliberately excludes
+the dev tooling (pytest, jupyterlab); `pixi install --frozen -e dev` adds it.
 
-Verify the heavy stack imports. `micromamba run -n` runs the command inside the
-env without needing shell activation, so it's a self-contained check:
+The environment name (`default`) and the pixi binary path are exactly the
+`PIXI_ENV` and `PIXI` values set in `deploy/run_dag_server.sh` (§3) — keep the
+two in sync.
+
+Verify the heavy stack imports. `pixi run -e` runs the command inside the
+environment without needing shell activation, so it's a self-contained check:
 
 ```bash
-micromamba run -n new_comparator \
+pixi run --frozen -e default \
     python -c "import herbie, scipy, cartopy, matplotlib; print('env OK')"
 ```
 
 **If the server can't reach conda-forge directly** (air-gapped or behind a
-proxy): point micromamba at AccuWeather's internal conda channel
-(Artifactory/Nexus) in `~/.condarc` — micromamba reads it —
+proxy): point the workspace at AccuWeather's internal conda mirror
+(Artifactory/Nexus) by changing `channels` in `[tool.pixi.workspace]`, or
+override per-invocation without editing the manifest:
 
-```yaml
-channels: [https://<internal-mirror>/conda-forge]
-channel_priority: strict
+```bash
+pixi install --channel https://<internal-mirror>/conda-forge
 ```
 
-then run the same `micromamba create` above. For a box with **no** reachable
-channel at all, build the env once on a matching **Linux x86-64** host, ship it
-with `conda-pack`, and unpack it into `$MAMBA_ROOT_PREFIX/envs/new_comparator`
-(run the bundled `bin/conda-unpack` afterward to fix the baked-in paths); the
-micromamba activation in `run_dag_server.sh` then drives it unchanged.
+For a box with **no** reachable channel at all, use
+[`pixi-pack`](https://github.com/Quantco/pixi-pack) — the pixi-native
+replacement for `conda-pack`. On a matching **Linux x86-64** host with network
+access:
 
-The repo lives at `/home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute`
-on this host. `micromamba run -n new_comparator pip install -e .` is optional —
-the daemon starts with `python -m` from the repo dir, which works as long as the
-env is active and the working directory is the repo.
+```bash
+pixi-pack pack --environment default --platform linux-64   # → environment.tar
+```
+
+Copy `environment.tar` to the server and unpack it there:
+
+```bash
+pixi-pack unpack environment.tar        # → ./env  (paths fixed up on unpack)
+```
+
+Note this produces a standalone prefix rather than a `.pixi/envs/default`
+managed by pixi, so point `run_dag_server.sh` at it directly instead of using
+the `shell-hook` path — activate with `source env/bin/activate` before the
+`nohup python -m` line. Verify `pixi-pack`'s current release before relying on
+it; it is a separate project from pixi itself.
+
+Also note that cartopy downloads Natural Earth coastline/border/state
+shapefiles on first plot and caches them under `~/.local/share/cartopy`. That
+was equally true of the old conda environment, but on a genuinely air-gapped box
+you need to pre-seed that cache from a networked machine, or the first render
+will fail.
+
+`pixi install` also does an editable install of this repo, putting `compare` and
+`compare-web` on PATH. That is convenient but not required: the daemon starts
+with `python -m comparator.webserver` from the repo dir, so it keeps working as
+long as the environment is active and the working directory is the repo.
 
 ---
 
@@ -104,13 +134,12 @@ The `deploy/` directory has everything needed:
 * `cleanup_dag_files.sh` — cron'd disk cleanup (see §7).
 * `crontab.example` — the three cron lines below.
 
-Edit the **EDIT THESE** block at the top of `run_dag_server.sh` for your
-micromamba activation (`MICROMAMBA` binary path, `MAMBA_ROOT_PREFIX`, and
-`ENV_NAME`) and your `DAG_CONFIG` path (the `REPO_DIR` default already matches
-this host's checkout). Cron does not source `~/.bashrc`, so those three
-micromamba values must be spelled out explicitly rather than inherited from an
-interactive shell — find them with `which micromamba`, `echo
-"$MAMBA_ROOT_PREFIX"`, and `micromamba env list`. Then:
+Edit the **EDIT THESE** block at the top of `run_dag_server.sh` for your pixi
+activation (`PIXI` binary path and `PIXI_ENV`) and your `DAG_CONFIG` path (the
+`REPO_DIR` default already matches this host's checkout). Cron does not source
+`~/.bashrc`, so the pixi binary must be spelled out as an absolute path rather
+than inherited from an interactive shell's `PATH` — find it with `which pixi`,
+and list the environment names with `pixi info`. Then:
 
 ```bash
 chmod +x deploy/*.sh
@@ -190,9 +219,9 @@ It deliberately **keeps**, regardless of age: the regridder weight cache
 (`weights_*_knn.npz` — expensive to rebuild and reused across every run), the
 `runs.jsonl` manifest that `compare list` reads, and everything in `log_dir`.
 
-It's pure `find` with **no micromamba/conda activation** on purpose, so cleanup
-keeps working even if the Python env is broken — which is exactly when the disk
-is most likely filling up. Edit the **EDIT THESE** block at the top so
+It's pure `find` with **no pixi activation** on purpose, so cleanup keeps
+working even if the Python env is broken — which is exactly when the disk is
+most likely filling up. Edit the **EDIT THESE** block at the top so
 `DATA_DIR`/`OUT_DIR` match your `config.yaml` (or just export the same `DAG_DATA_DIR`
 / `DAG_OUT_DIR` the app already honors — those win over the block).
 

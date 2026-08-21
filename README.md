@@ -37,15 +37,47 @@ env vars, exactly as for the CLI (see [Configuration](#configuration)).
 
 As the data is downloaded from NOMADS & AWS, no special permissions are required.
 Data are downloaded automatically via Herbie and cached locally in ./data/.
-For the environemnt, I recommend: conda env create -f environment.yml
-This program is built for Python 3.11 (see `environment.yml`).
+
+## Environment setup
+
+Dependencies are managed with [pixi](https://pixi.sh), which resolves the
+scientific stack from conda-forge. That matters because cartopy, pyproj, and
+cfgrib are Python layers over C/C++ libraries (GEOS, PROJ, ecCodes) — conda-forge
+ships those as real packages the solver reasons about, instead of relying on
+whichever wheel happens to vendor them. Install pixi once:
+
+```
+curl -fsSL https://pixi.sh/install.sh | bash
+```
+
+Then, from the repo root:
+
+```
+pixi install -e dev        # build the environment from pixi.lock
+pixi run app               # streamlit run new_comparison.py
+pixi run -e dev test       # pytest
+```
+
+`pixi run <task>` builds the environment first if it is missing, so the commands
+above work from a fresh clone with no separate activation step. `pixi shell -e
+dev` drops you into an activated shell if you would rather run things directly.
+
+Two environments are defined in `pyproject.toml`: `default` (runtime only, used
+by the deployed daemon) and `dev`, which adds pytest and jupyterlab. Exact
+package builds and hashes are pinned in the committed `pixi.lock`, so every
+machine and the server resolve identically — commit it along with any dependency
+change. This program is built for Python 3.11.
+
+Setting this up on a Linux workstation from scratch — installing pixi, fetching
+the zip from Confluence, and running your first comparison — is covered
+step by step in **[docs/INSTALL_LINUX.md](docs/INSTALL_LINUX.md)**.
 
 ## Command-line interface (`compare`)
 
 For scripted and terminal use there is a non-interactive CLI built on the same
-engine. After installing the package (`pip install -e .` inside the conda env)
-the `compare` command is on your `$PATH` (equivalently
-`python -m comparator.cli`):
+engine. `pixi install` already does an editable install of the package, so the
+`compare` command is on the environment's `$PATH` — run it as `pixi run compare
+…`, or directly after `pixi shell` (equivalently `python -m comparator.cli`):
 
 ```
 # Generate one comparison. With no --date it runs in ROLLING REAL-TIME mode:
@@ -104,10 +136,11 @@ compare-web serve --port 9000     # (equivalently: python -m comparator.webserve
 The form is meant to live behind the company intranet web server: `compare-web
 serve` runs as an always-on daemon (cron-supervised — no systemd available),
 and Apache httpd reverse-proxies a URL path to it (`ProxyPass`/
-`ProxyPassReverse`). Because the scientific stack is conda-managed and the
-target box is typically air-gapped, the environment is shipped with
-**conda-pack**. The full, step-by-step guide (building the env offline,
-installing the daemon + cron supervision, and the httpd proxy config) is in
+`ProxyPassReverse`). The server builds its environment from the committed
+`pixi.lock` with `pixi install --frozen`; where the box is genuinely air-gapped
+the environment is shipped with **pixi-pack** instead. The full, step-by-step
+guide (building the env offline, installing the daemon + cron supervision, and
+the httpd proxy config) is in
 **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**, with the deployable scripts and
 config in **[deploy/](deploy/)**.
 
