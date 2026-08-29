@@ -7,8 +7,8 @@ __pycache__/
 .venv/
 venv/
 
-# Conda
-.conda/
+# pixi: the project-local environment. pixi.lock IS tracked — do not ignore it.
+.pixi/
 
 # macOS
 .DS_Store

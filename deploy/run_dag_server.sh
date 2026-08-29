@@ -10,14 +10,11 @@ set -euo pipefail
 
 # --- EDIT THESE for your server --------------------------------------------
 REPO_DIR="/home/grads/scripts/python/rtc/DAG_ModelComparison-reduced_compute"
-# micromamba env activation. Cron runs with a minimal environment and does NOT
-# source ~/.bashrc, so the `micromamba` shell function and MAMBA_ROOT_PREFIX
-# that an interactive login sets up are NOT available here — we recreate them
-# explicitly below. Fill these in from a normal shell with:
-#   which micromamba ; echo "$MAMBA_ROOT_PREFIX" ; micromamba env list
-MICROMAMBA="$HOME/.local/bin/micromamba"     # absolute path to the binary
-export MAMBA_ROOT_PREFIX="$HOME/micromamba"  # root prefix that holds your envs
-ENV_NAME="rtc"                               # the env's name (from `env list`)
+# pixi env activation. Cron runs with a minimal environment and does NOT source
+# ~/.bashrc, so the PATH entry an interactive login sets up is NOT available
+# here — spell out the absolute binary path instead. Find it from a normal
+# shell with:  which pixi
+PIXI="$HOME/.pixi/bin/pixi"                  # absolute path to the binary
 DAG_CONFIG="$REPO_DIR/config.yaml"
 PORT=8000
 # ---------------------------------------------------------------------------
@@ -38,17 +35,20 @@ export MPLBACKEND=Agg
 unset HERBIE_SAVE_DIR || true
 export DAG_CONFIG
 
-# Activate the env the micromamba way. This runs the env's activate.d hooks
-# (they set GDAL_DATA/PROJ_LIB, which cartopy/pyproj need) — bypassing them by
-# calling the env's python directly would break projection lookups. We init the
-# shell hook from the absolute binary so it works identically under cron, and
-# activate rather than `micromamba run` so the backgrounded python stays the
-# direct child: $! below is then the server's own PID, keeping the pidfile /
-# watchdog / restart logic exact. `set +u` guards the hook, which may reference
-# unset shell vars (e.g. PS1); it's restored right after.
+# Activate the env the pixi way. This runs the packages' activate.d hooks — in
+# particular proj4-activate.sh, which sets PROJ_DATA for cartopy/pyproj; bypass
+# them by calling the env's python directly and projection lookups break. The
+# hook output is plain `export` lines plus a `.` of each activate.d script, so
+# eval'ing it is the direct analog of the old micromamba hook. We eval the hook
+# from the absolute binary so it works identically under cron, and activate
+# rather than `pixi run` so the backgrounded python stays the direct child: $!
+# below is then the server's own PID, keeping the pidfile / watchdog / restart
+# logic exact. `--frozen` installs strictly from pixi.lock without re-solving,
+# so a boot-time start needs no network. `set +u` guards the hook, which may
+# reference unset shell vars (e.g. PS1); it's restored right after.
 set +u
-eval "$("$MICROMAMBA" shell hook -s bash)"
-micromamba activate "$ENV_NAME"
+eval "$("$PIXI" shell-hook --manifest-path "$REPO_DIR/pixi.toml" \
+                           --shell bash --frozen)"
 set -u
 cd "$REPO_DIR"
 

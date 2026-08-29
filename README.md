@@ -12,15 +12,33 @@ Then, a valid forecast hour, (i.e, 24)
 
 As the data is downloaded from NOMADS & AWS, no special permissions are required.
 Data are downloaded automatically via Herbie and cached locally in ./data/.
-For the environemnt, I recommend: conda env create -f environment.yml
-This program is built for Python 3.11 (see `environment.yml`).
+
+## Environment
+
+The environment is managed with [pixi](https://pixi.sh) — install it once
+(`curl -fsSL https://pixi.sh/install.sh | bash`, or
+`iwr -useb https://pixi.sh/install.ps1 | iex` on Windows; no admin rights
+needed), then from the repo root:
+
+```
+pixi install --locked        # builds .pixi/envs/default from pixi.lock
+pixi run env-check           # smoke-test the scientific stack
+pixi run test                # pytest
+```
+
+Packages come from conda-forge and are pinned by the committed `pixi.lock`, so
+every machine gets an identical environment. `pixi install` also installs this
+repo as an editable package, so the `compare` / `compare-web` console scripts
+below work with no extra step. Prefix any command with `pixi run`, or enter the
+env once with `pixi shell`. This program is built for Python 3.11 (see
+`pixi.toml`).
 
 ## Command-line interface (`compare`)
 
 For scripted and terminal use there is a non-interactive CLI built on the same
-engine. After installing the package (`pip install -e .` inside the conda env)
-the `compare` command is on your `$PATH` (equivalently
-`python -m comparator.cli`):
+engine. `pixi install` puts the `compare` command on your `$PATH` inside the env
+(equivalently `python -m comparator.cli`), so run the commands below via
+`pixi run compare ...` or from inside `pixi shell`:
 
 ```
 # Generate one comparison. With no --date it runs in ROLLING REAL-TIME mode:
@@ -67,8 +85,8 @@ builds.
 Run it locally (no extra dependencies — pure standard library):
 
 ```
-compare-web serve                 # then open http://127.0.0.1:8000/
-compare-web serve --port 9000     # (equivalently: python -m comparator.webserver serve)
+pixi run serve                              # then open http://127.0.0.1:8000/
+pixi run compare-web serve --port 9000      # (equivalently: python -m comparator.webserver serve)
 ```
 
 `config.yaml` / `DAG_*` env vars still govern `data_dir`, `out_dir`, and
@@ -79,13 +97,13 @@ compare-web serve --port 9000     # (equivalently: python -m comparator.webserve
 The form is meant to live behind the company intranet web server: `compare-web
 serve` runs as an always-on daemon (cron-supervised — no systemd available),
 and Apache httpd reverse-proxies a URL path to it (`ProxyPass`/
-`ProxyPassReverse`). Because the scientific stack is conda-managed and the
-target box is typically air-gapped, the environment is shipped with
-**conda-pack**. The full, step-by-step guide (building the env offline,
-installing the daemon + cron supervision, and the httpd proxy config) is in
-**[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**, with the deployable scripts and
-config in **[deploy/](deploy/)**.
+`ProxyPassReverse`). The scientific stack is pixi-managed from conda-forge and
+pinned by the committed `pixi.lock`, so the server env is built with the same
+`pixi install --locked` used anywhere else. The full, step-by-step guide
+(building the env, installing the daemon + cron supervision, and the httpd proxy
+config) is in **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**, with the deployable
+scripts and config in **[deploy/](deploy/)**.
 
 The manual entry points still work unchanged and share the same engine — the
-interactive `python new_comparison.py` and the non-interactive
-`compare run | list | latest` (see above).
+interactive `pixi run interactive` (i.e. `python new_comparison.py`) and the
+non-interactive `compare run | list | latest` (see above).

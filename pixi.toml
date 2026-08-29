@@ -1,0 +1,62 @@
+# Environment definition for DAG_ModelComparison.
+#
+# This replaces the former conda `environment.yml`: pixi (BSD-3-Clause,
+# prefix.dev) resolves the same conda-forge packages, installs them into a
+# project-local `.pixi/` directory needing no admin rights, and writes a
+# committed `pixi.lock` so the server and every dev box get byte-identical
+# environments. Nothing here depends on Anaconda-licensed software.
+#
+#   pixi install --locked     build the env exactly as locked
+#   pixi run test             run the test suite
+#   pixi run serve            start the web daemon locally
+#   pixi run compare ...      the CLI (no task needed; pixi runs env binaries)
+#
+# See docs/DEPLOYMENT.md for the server deployment.
+
+[workspace]
+name = "dag-modelcomparison"
+version = "0.0.0"
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64"]   # intranet server + Windows dev workstation
+
+[dependencies]
+# Pins carried over verbatim from the old environment.yml.
+python = "3.11.14.*"
+xarray = "2025.12.0.*"
+numpy = "2.3.5.*"
+matplotlib = "3.10.8.*"
+pyproj = "3.7.2.*"
+pandas = "<3.0"
+scipy = "*"
+cartopy = "*"
+herbie-data = "*"
+pyyaml = "*"
+# Declared explicitly rather than left to chance as transitive deps:
+cfgrib = "*"    # GRIB2 decode path; normalize.get_xarray_kwargs() returns
+eccodes = "*"   # cfgrib backend_kwargs consumed by Herbie's .xarray().
+pillow = "*"    # imported by comparator/build_gif.py.
+
+[pypi-dependencies]
+# Editable install of this repo, so the `compare` / `compare-web` console
+# scripts from pyproject.toml are on PATH inside the env. Replaces the old
+# separate `pip install -e .` step.
+comparator = { path = ".", editable = true }
+
+[tasks]
+test = "pytest"
+serve = "compare-web serve"
+interactive = "python new_comparison.py"
+env-check = "python -c \"import herbie, scipy, cartopy, matplotlib, cfgrib, PIL; print('env OK')\""
+
+[feature.dev.dependencies]
+pytest = "*"
+
+[feature.notebook.dependencies]
+jupyterlab = "*"
+
+[environments]
+# The default env is what the server installs — lean, no test or notebook tools.
+# `dev` shares a solve group with it so both resolve to identical versions of
+# every package they have in common.
+default = { solve-group = "prod" }
+dev = { features = ["dev", "notebook"], solve-group = "prod" }
