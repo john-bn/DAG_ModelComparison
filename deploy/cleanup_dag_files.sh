@@ -2,7 +2,7 @@
 #
 # Delete aged-out working files for the comparator, so the server's disk does
 # not grow without bound. Meant to be run by cron (see crontab.example). Pure
-# `find` — deliberately NO micromamba/conda activation, so disk cleanup keeps
+# `find` — deliberately NO pixi env activation, so disk cleanup keeps
 # working even if the Python env is broken (a broken env is exactly when the
 # disk is most likely filling up). See docs/DEPLOYMENT.md.
 #

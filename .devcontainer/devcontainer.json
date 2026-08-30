@@ -1,12 +1,14 @@
 {
   "name": "DAG ModelComparison",
-  "image": "mcr.microsoft.com/devcontainers/miniconda:1-3",
-  "postCreateCommand": "conda env create -f environment.yml && conda run -n new_comparator pip install -e .",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/prefix-dev/devcontainer-features/pixi:0": {}
+  },
+  "postCreateCommand": "pixi install --locked -e dev",
   "customizations": {
     "vscode": {
       "settings": {
-        "python.defaultInterpreterPath": "/opt/conda/envs/new_comparator/bin/python",
-        "python.condaPath": "/opt/conda/bin/conda"
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.pixi/envs/dev/bin/python"
       },
       "extensions": [
         "ms-python.python"

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($c = Get-Command pixi -ErrorAction SilentlyContinue; if \\($c\\) { $c.Source; pixi --version } else { \"pixi NOT on PATH\" })",
+      "PowerShell(git rm environment.yml)",
+      "PowerShell(Remove-Item -LiteralPath 'environment.yml' -Confirm:$false)",
+      "PowerShell(powershell -ExecutionPolicy Bypass -c \"irm -useb https://pixi.sh/install.ps1 | iex\")",
+      "PowerShell($env:PATH = \"$env:USERPROFILE\\\\.pixi\\\\bin;$env:PATH\"; pixi --version; pixi shell-hook --help)",
+      "PowerShell($env:PATH = \"$env:USERPROFILE\\\\.pixi\\\\bin;$env:PATH\"; pixi lock --no-progress)",
+      "PowerShell($env:PATH = \"$env:USERPROFILE\\\\.pixi\\\\bin;$env:PATH\"; pixi install --locked -e dev --no-progress)",
+      "PowerShell($env:PATH = \"$env:USERPROFILE\\\\.pixi\\\\bin;$env:PATH\"; pixi run -e dev env-check)",
+      "PowerShell($env:PATH = \"$env:USERPROFILE\\\\.pixi\\\\bin;$env:PATH\"; pixi run -e dev test)"
+    ]
+  }
+}

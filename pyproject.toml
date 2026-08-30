@@ -7,8 +7,8 @@ name = "comparator"
 version = "0.0.0"
 requires-python = ">3.11"
 # Only the pure-Python deps are declared here. The heavy scientific stack
-# (herbie, xesmf/esmf, cartopy, metpy, xarray, ...) is provided by the conda
-# environment in environment.yml — do not try to pip-install it.
+# (herbie, cartopy, xarray, cfgrib/eccodes, ...) is provided by the pixi
+# environment in pixi.toml — do not try to pip-install it.
 dependencies = ["pyyaml"]
 
 [project.scripts]
